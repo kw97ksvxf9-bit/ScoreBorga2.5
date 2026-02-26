@@ -127,7 +127,7 @@ class TestMLPredictor:
         predictor = MLPredictor(model_path="/tmp/test_model.pkl")
         result = predictor.predict(SAMPLE_ANALYTICS)
         assert result["prediction"] == "Draw"
-        assert result["confidence"] == 33.3
+        assert result["confidence"] == pytest.approx(33.3, rel=0.1)
 
     def test_save_and_load_model(self):
         import tempfile

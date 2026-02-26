@@ -119,7 +119,10 @@ def run_pipeline(
         # Train if not already trained or if force_retrain is True
         if force_retrain or not predictor.is_trained:
             logger.info("ML model not trained, initiating training...")
-            train_ml_model(sm_client, league_ids=league_ids)
+            training_success = train_ml_model(sm_client, league_ids=league_ids)
+            if not training_success:
+                logger.warning("ML model training failed, falling back to stat mode")
+                mode = "stat"
         else:
             logger.info("Using existing trained ML model")
 

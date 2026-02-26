@@ -204,7 +204,7 @@ class MLPredictor:
             return {
                 "prediction": "Draw",
                 "confidence": 33.3,
-                "probabilities": {"home": 0.33, "draw": 0.34, "away": 0.33},
+                "probabilities": {"home": 0.333, "draw": 0.334, "away": 0.333},
             }
 
         features = self._prepare_features(analytics)
