@@ -119,13 +119,23 @@ class SportmonksClient:
         Fetch the most recent completed fixtures for a team.
         Used for calculating current form.
         """
-        fixtures = self._paginate(
-            f"teams/{team_id}/fixtures",
-            params={
-                "filters": "fixtureStatus:FT",
-                "include": "participants;scores",
-                "per_page": count,
-                "sort": "-starting_at",
-            },
-        )
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+        lookback = getattr(settings, "RECENT_FIXTURES_LOOKBACK_DAYS", 180)
+        date_from = (now - timedelta(days=lookback)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
+
+        try:
+            fixtures = self._paginate(
+                f"fixtures/between/{date_from}/{date_to}",
+                params={
+                    "filters": f"fixtureTeams:{team_id};fixtureStatus:FT",
+                    "include": "participants;scores",
+                },
+            )
+        except requests.exceptions.RequestException as exc:
+            logger.warning("Could not fetch recent fixtures for team %s: %s", team_id, exc)
+            return []
+
+        fixtures.sort(key=lambda f: f.get("starting_at", ""), reverse=True)
         return fixtures[:count]
