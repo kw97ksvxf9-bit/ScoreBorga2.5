@@ -1,0 +1,27 @@
+spec:
+  name: scoreborga-2-5
+  workers:
+    - name: scheduler
+      dockerfile_path: Dockerfile
+      instance_count: 1
+      instance_size_slug: basic-xxs
+      run_command: python scheduler/weekend_runner.py
+      envs:
+        - key: SPORTMONKS_API_KEY
+          scope: RUN_TIME
+          type: SECRET
+        - key: ODDS_API_KEY
+          scope: RUN_TIME
+          type: SECRET
+        - key: TELEGRAM_BOT_TOKEN
+          scope: RUN_TIME
+          type: SECRET
+        - key: TELEGRAM_CHAT_ID
+          scope: RUN_TIME
+          type: SECRET
+        - key: TIMEZONE
+          scope: RUN_TIME
+          value: Europe/London
+        - key: PREDICTION_RUN_TIME
+          scope: RUN_TIME
+          value: "09:00"

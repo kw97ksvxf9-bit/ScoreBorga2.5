@@ -83,5 +83,46 @@ Predictions are automatically posted to your configured Telegram channel/group e
 
 ---
 
+## 🚀 Deploying on DigitalOcean
+
+### Option A — App Platform (recommended)
+
+1. Push this repository to GitHub.
+2. In the [DigitalOcean App Platform](https://cloud.digitalocean.com/apps), create a new app and point it at your repository.
+3. DigitalOcean will detect `.do/app.yaml` and pre-fill the service configuration.
+4. Set the four secret environment variables in the App Platform dashboard:
+   - `SPORTMONKS_API_KEY`
+   - `ODDS_API_KEY`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+5. Deploy — the worker starts and runs predictions every Friday at 09:00 UTC.
+
+Alternatively, use the [doctl](https://docs.digitalocean.com/reference/doctl/) CLI:
+```bash
+doctl apps create --spec .do/app.yaml
+```
+
+### Option B — Droplet (Docker)
+
+1. Provision a Ubuntu Droplet and install Docker:
+   ```bash
+   apt-get update && apt-get install -y docker.io docker-compose-plugin
+   ```
+2. Copy the project to the Droplet and create your `.env` from the template:
+   ```bash
+   cp .env.example .env
+   # Fill in your API keys
+   ```
+3. Build and start the container:
+   ```bash
+   docker compose up -d --build
+   ```
+4. View live logs:
+   ```bash
+   docker compose logs -f
+   ```
+
+---
+
 ## 📄 License
 MIT
