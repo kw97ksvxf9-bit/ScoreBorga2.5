@@ -4,6 +4,8 @@ Unit tests for engine/predictor.py and engine/analytics.py.
 """
 
 import pytest
+from leagues.top7 import TOP7_LEAGUES, LEAGUE_BY_ID
+from config.settings import settings
 from engine.predictor import (
     predict_fixture,
     predict_all,
@@ -31,7 +33,7 @@ def _make_participant(team_id: int, name: str, location: str) -> dict:
 def _make_fixture(fixture_id: int, home_id: int, away_id: int, home_goals: int, away_goals: int) -> dict:
     return {
         "id": fixture_id,
-        "league_id": 271,
+        "league_id": 8,
         "starting_at": "2025-03-01T15:00:00+00:00",
         "participants": [
             _make_participant(home_id, "Home FC", "home"),
@@ -136,7 +138,7 @@ class TestBuildFixtureAnalytics:
         assert analytics["fixture_id"] == 999
         assert analytics["home_team"] == "Home FC"
         assert analytics["away_team"] == "Away FC"
-        assert analytics["league_id"] == 271
+        assert analytics["league_id"] == 8
         assert analytics["odds"] == SAMPLE_ODDS
         assert "home_form" in analytics
         assert "away_form" in analytics
@@ -182,7 +184,7 @@ class TestPredictFixture:
             "home_team": "Home FC",
             "away_team": "Away FC",
             "kickoff": "2025-03-01T15:00:00+00:00",
-            "league_id": 271,
+            "league_id": 8,
             "home_form": form,
             "away_form": away_form,
             "h2h": h2h,
@@ -216,7 +218,7 @@ class TestPredictFixture:
             "home_team": "Strong FC",
             "away_team": "Weak FC",
             "kickoff": "2025-03-01T15:00:00+00:00",
-            "league_id": 271,
+            "league_id": 8,
             "home_form": perfect_home_form,
             "away_form": poor_away_form,
             "h2h": {"team1_wins": 4, "team2_wins": 0, "draws": 1, "total": 5,
@@ -243,7 +245,7 @@ class TestPredictAll:
                 "home_team": f"Home{i}",
                 "away_team": f"Away{i}",
                 "kickoff": "2025-03-01T15:00:00+00:00",
-                "league_id": 271,
+                "league_id": 8,
                 "home_form": {},
                 "away_form": {},
                 "h2h": {},
@@ -253,3 +255,29 @@ class TestPredictAll:
         ]
         results = predict_all(analytics_list)
         assert len(results) == 5
+
+
+# ---------------------------------------------------------------------------
+# League ID regression tests
+# ---------------------------------------------------------------------------
+
+class TestLeagueIDs:
+    def test_epl_id_is_8(self):
+        """Premier League must map to Sportmonks league_id 8, not 271 (Denmark Superliga)."""
+        epl = next(lg for lg in TOP7_LEAGUES if lg["name"] == "Premier League")
+        assert epl["id"] == 8
+
+    def test_epl_id_not_271(self):
+        """271 (Denmark Superliga) must not appear in TOP7_LEAGUES."""
+        ids = [lg["id"] for lg in TOP7_LEAGUES]
+        assert 271 not in ids
+
+    def test_settings_league_ids_match_top7(self):
+        """settings.LEAGUE_IDS must contain exactly the same IDs as TOP7_LEAGUES."""
+        expected = {lg["id"] for lg in TOP7_LEAGUES}
+        assert set(settings.LEAGUE_IDS) == expected
+
+    def test_league_by_id_contains_epl(self):
+        """LEAGUE_BY_ID lookup must resolve league_id 8 to Premier League."""
+        assert 8 in LEAGUE_BY_ID
+        assert LEAGUE_BY_ID[8]["name"] == "Premier League"

@@ -44,7 +44,7 @@ class Settings:
 
     # Top 7 European League IDs (Sportmonks v3)
     LEAGUE_IDS: list = [
-        271,   # Premier League (England)
+        8,     # Premier League (England)
         564,   # La Liga (Spain)
         82,    # Bundesliga (Germany)
         384,   # Serie A (Italy)

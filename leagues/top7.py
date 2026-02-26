@@ -8,7 +8,7 @@ from typing import List, Dict
 # League definitions: name, country, Sportmonks v3 league ID, Odds API sport key
 TOP7_LEAGUES: List[Dict] = [
     {
-        "id": 271,
+        "id": 8,
         "name": "Premier League",
         "country": "England",
         "odds_key": "soccer_epl",
