@@ -4,6 +4,9 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /app
 
+# Ensure all top-level packages are importable
+ENV PYTHONPATH=/app
+
 # Install dependencies first (leverages Docker layer cache)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
