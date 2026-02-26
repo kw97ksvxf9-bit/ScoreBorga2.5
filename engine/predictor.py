@@ -2,15 +2,20 @@
 engine/predictor.py
 Core prediction logic for ScoreBorga 2.5.
 
-Uses a weighted scoring model combining:
-  - Recent form (last 5 matches)
-  - Head-to-head record
-  - Home advantage
-  - Implied probability from odds
+Supports three prediction modes:
+  - "stat": Uses a weighted scoring model combining:
+      - Recent form (last 5 matches)
+      - Head-to-head record
+      - Home advantage
+      - Implied probability from odds
+  - "ml": Uses machine learning model trained on historical data
+  - "hybrid": Combines both stat-based and ML predictions for sharper results
 """
 
 import logging
 from typing import Dict, Optional
+
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +24,7 @@ HOME_WIN = "Home Win"
 DRAW = "Draw"
 AWAY_WIN = "Away Win"
 
-# Model weights (must sum to 1.0)
+# Model weights for stat-based prediction (must sum to 1.0)
 WEIGHT_FORM = 0.35
 WEIGHT_H2H = 0.20
 WEIGHT_HOME_ADV = 0.15
@@ -45,18 +50,15 @@ def _implied_prob(odds: float) -> float:
     return round(1.0 / odds, 4)
 
 
-def predict_fixture(analytics: Dict) -> Dict:
+def _stat_based_prediction(analytics: Dict) -> Dict:
     """
-    Generate a prediction for a single fixture.
+    Generate a prediction using the stat-based weighted scoring model.
 
     Args:
         analytics: Structured analytics dict from engine/analytics.py.
 
     Returns:
-        Dict with keys:
-            fixture_id, home_team, away_team, kickoff,
-            prediction (str), confidence (float 0–100),
-            reasoning (str), scores (dict with home/draw/away raw scores).
+        Dict with prediction, confidence, and scores.
     """
     home_form = analytics.get("home_form", {})
     away_form = analytics.get("away_form", {})
@@ -121,9 +123,124 @@ def predict_fixture(analytics: Dict) -> Dict:
         prediction = AWAY_WIN
         confidence = round((scores["away"] / total_score) * 100, 1)
 
-    # --- Build reasoning string ---
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "scores": scores,
+    }
+
+
+def _hybrid_prediction(analytics: Dict) -> Dict:
+    """
+    Generate a prediction combining stat-based and ML models.
+
+    Args:
+        analytics: Structured analytics dict from engine/analytics.py.
+
+    Returns:
+        Dict with prediction, confidence, scores, and hybrid details.
+    """
+    # Import here to avoid circular imports
+    from engine.ml_model import get_ml_predictor
+
+    # Get stat-based prediction
+    stat_pred = _stat_based_prediction(analytics)
+    stat_scores = stat_pred["scores"]
+
+    # Get ML prediction
+    ml_predictor = get_ml_predictor()
+    ml_pred = ml_predictor.predict(analytics)
+    ml_probs = ml_pred["probabilities"]
+
+    # Combine predictions using configured weight
+    ml_weight = settings.ML_WEIGHT
+    stat_weight = 1.0 - ml_weight
+
+    # Normalize stat scores to probabilities
+    stat_total = sum(stat_scores.values()) or 1.0
+    stat_probs = {
+        "home": stat_scores["home"] / stat_total,
+        "draw": stat_scores["draw"] / stat_total,
+        "away": stat_scores["away"] / stat_total,
+    }
+
+    # Combined probabilities (hybrid)
+    hybrid_probs = {
+        "home": stat_weight * stat_probs["home"] + ml_weight * ml_probs["home"],
+        "draw": stat_weight * stat_probs["draw"] + ml_weight * ml_probs["draw"],
+        "away": stat_weight * stat_probs["away"] + ml_weight * ml_probs["away"],
+    }
+
+    # Determine final prediction
+    max_prob = max(hybrid_probs.values())
+    if max_prob == hybrid_probs["home"]:
+        prediction = HOME_WIN
+    elif max_prob == hybrid_probs["draw"]:
+        prediction = DRAW
+    else:
+        prediction = AWAY_WIN
+
+    confidence = round(max_prob * 100, 1)
+
+    # Convert hybrid probs back to scores format
+    hybrid_scores = {
+        "home": round(hybrid_probs["home"], 4),
+        "draw": round(hybrid_probs["draw"], 4),
+        "away": round(hybrid_probs["away"], 4),
+    }
+
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "scores": hybrid_scores,
+        "stat_prediction": stat_pred["prediction"],
+        "ml_prediction": ml_pred["prediction"],
+        "ml_confidence": ml_pred["confidence"],
+    }
+
+
+def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
+    """
+    Generate a prediction for a single fixture.
+
+    Args:
+        analytics: Structured analytics dict from engine/analytics.py.
+        mode: Prediction mode ("stat", "ml", or "hybrid"). Defaults to settings.PREDICTION_MODE.
+
+    Returns:
+        Dict with keys:
+            fixture_id, home_team, away_team, kickoff,
+            prediction (str), confidence (float 0–100),
+            reasoning (str), scores (dict with home/draw/away raw scores).
+    """
+    mode = mode or settings.PREDICTION_MODE
+
+    if mode == "ml":
+        # Import here to avoid circular imports
+        from engine.ml_model import predict_with_ml
+        ml_result = predict_with_ml(analytics)
+        result = {
+            "prediction": ml_result["prediction"],
+            "confidence": ml_result["confidence"],
+            "scores": {
+                "home": round(ml_result["probabilities"]["home"], 4),
+                "draw": round(ml_result["probabilities"]["draw"], 4),
+                "away": round(ml_result["probabilities"]["away"], 4),
+            },
+        }
+    elif mode == "hybrid":
+        result = _hybrid_prediction(analytics)
+    else:  # "stat" or default
+        result = _stat_based_prediction(analytics)
+
+    # Build reasoning string
     home_team = analytics.get("home_team", "Home")
     away_team = analytics.get("away_team", "Away")
+    home_form = analytics.get("home_form", {})
+    away_form = analytics.get("away_form", {})
+    h2h = analytics.get("h2h", {})
+    odds = analytics.get("odds", {})
+
     home_form_str = home_form.get("form_string", "N/A")
     away_form_str = away_form.get("form_string", "N/A")
     h2h_total = h2h.get("total", 0)
@@ -142,26 +259,37 @@ def predict_fixture(analytics: Dict) -> Dict:
             f"Odds: H {odds.get('home', '-')} / D {odds.get('draw', '-')} / A {odds.get('away', '-')}"
         )
 
+    # Add mode indicator to reasoning
+    if mode == "hybrid":
+        reasoning_parts.append(f"Mode: Hybrid (ML+Stats)")
+        if "ml_prediction" in result:
+            reasoning_parts.append(f"ML: {result['ml_prediction']} ({result['ml_confidence']}%)")
+    elif mode == "ml":
+        reasoning_parts.append("Mode: ML Model")
+    else:
+        reasoning_parts.append("Mode: Statistics")
+
     return {
         "fixture_id": analytics.get("fixture_id"),
         "home_team": home_team,
         "away_team": away_team,
         "kickoff": analytics.get("kickoff"),
         "league_id": analytics.get("league_id"),
-        "prediction": prediction,
-        "confidence": confidence,
+        "prediction": result["prediction"],
+        "confidence": result["confidence"],
         "reasoning": " | ".join(reasoning_parts),
-        "scores": scores,
+        "scores": result["scores"],
         "odds": odds,
     }
 
 
-def predict_all(analytics_list: list) -> list:
+def predict_all(analytics_list: list, mode: Optional[str] = None) -> list:
     """
     Run predictions for a list of fixture analytics dicts.
 
     Args:
         analytics_list: List of dicts from engine/analytics.py.
+        mode: Prediction mode ("stat", "ml", or "hybrid"). Defaults to settings.PREDICTION_MODE.
 
     Returns:
         List of prediction dicts.
@@ -169,7 +297,7 @@ def predict_all(analytics_list: list) -> list:
     predictions = []
     for analytics in analytics_list:
         try:
-            pred = predict_fixture(analytics)
+            pred = predict_fixture(analytics, mode=mode)
             predictions.append(pred)
         except Exception as exc:
             logger.error(

@@ -6,9 +6,10 @@ Orchestrates the full prediction pipeline:
   1. Fetch weekend fixtures from Sportmonks
   2. Fetch current odds from Odds API
   3. Run analytics per fixture
-  4. Generate predictions
-  5. Polish predictions
-  6. Send to Telegram
+  4. Train or load ML model (for hybrid/ml modes)
+  5. Generate predictions
+  6. Polish predictions
+  7. Send to Telegram
 """
 
 import logging
@@ -21,13 +22,66 @@ from engine.predictor import predict_all
 from engine.polisher import polish_all
 from output.telegram_bot import send_message
 from leagues.top7 import TOP7_LEAGUES, LEAGUE_BY_ID
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def train_ml_model(
+    sportmonks_client: Optional[SportmonksClient] = None,
+    num_seasons: Optional[int] = None,
+    league_ids: Optional[List[int]] = None,
+) -> bool:
+    """
+    Train the ML model on historical data.
+
+    Args:
+        sportmonks_client: Optional Sportmonks client instance (creates new one if not provided)
+        num_seasons: Number of seasons to train on (defaults to settings.HISTORICAL_SEASONS)
+        league_ids: List of league IDs to fetch data for (defaults to settings.LEAGUE_IDS)
+
+    Returns:
+        True if training succeeded, False otherwise
+    """
+    from data.historical import HistoricalDataFetcher
+    from engine.ml_model import get_ml_predictor
+
+    client = sportmonks_client or SportmonksClient()
+    num_seasons = num_seasons or settings.HISTORICAL_SEASONS
+    league_ids = league_ids or settings.LEAGUE_IDS
+
+    logger.info("=== Training ML model on %d seasons of historical data ===", num_seasons)
+
+    # Fetch historical data
+    fetcher = HistoricalDataFetcher(client)
+    training_data = fetcher.fetch_historical_training_data(
+        league_ids=league_ids,
+        num_seasons=num_seasons,
+    )
+
+    if not training_data:
+        logger.warning("No historical training data available")
+        return False
+
+    # Train the model
+    predictor = get_ml_predictor()
+    success = predictor.train(training_data)
+
+    if success:
+        # Save the trained model
+        predictor.save_model()
+        logger.info("=== ML model training complete ===")
+    else:
+        logger.error("=== ML model training failed ===")
+
+    return success
 
 
 def run_pipeline(
     dry_run: bool = False,
     league_ids: Optional[List[int]] = None,
+    mode: Optional[str] = None,
+    force_retrain: bool = False,
 ) -> str:
     """
     Execute the full prediction pipeline and optionally post results to Telegram.
@@ -35,11 +89,14 @@ def run_pipeline(
     Args:
         dry_run: If True, skip sending to Telegram (returns the message string).
         league_ids: Optional list of Sportmonks league IDs to restrict to.
+        mode: Prediction mode override ("stat", "ml", or "hybrid"). Defaults to settings.PREDICTION_MODE.
+        force_retrain: If True, retrain the ML model even if one exists.
 
     Returns:
         The polished prediction message string.
     """
-    logger.info("=== ScoreBorga 2.5 pipeline starting ===")
+    mode = mode or settings.PREDICTION_MODE
+    logger.info("=== ScoreBorga 2.5 pipeline starting (mode: %s) ===", mode)
 
     # 1. Fetch weekend fixtures
     sm_client = SportmonksClient()
@@ -54,7 +111,22 @@ def run_pipeline(
             send_message(message)
         return message
 
-    # 2. Fetch odds for all top-7 leagues
+    # 2. Prepare ML model for hybrid/ml modes
+    if mode in ("hybrid", "ml"):
+        from engine.ml_model import get_ml_predictor
+        predictor = get_ml_predictor()
+
+        # Train if not already trained or if force_retrain is True
+        if force_retrain or not predictor.is_trained:
+            logger.info("ML model not trained, initiating training...")
+            training_success = train_ml_model(sm_client, league_ids=league_ids)
+            if not training_success:
+                logger.warning("ML model training failed, falling back to stat mode")
+                mode = "stat"
+        else:
+            logger.info("Using existing trained ML model")
+
+    # 3. Fetch odds for all top-7 leagues
     odds_client = OddsApiClient()
     logger.info("Fetching odds from Odds API...")
     all_odds = odds_client.get_odds_for_all_top7(TOP7_LEAGUES)
@@ -62,7 +134,7 @@ def run_pipeline(
     # Build a lookup: sport_key → list of events
     league_odds_map = {league["odds_key"]: all_odds.get(league["odds_key"], []) for league in TOP7_LEAGUES}
 
-    # 3. Run analytics for each fixture
+    # 4. Run analytics for each fixture
     analytics_list = []
     for fixture in fixtures:
         league_id = fixture.get("league_id")
@@ -100,14 +172,14 @@ def run_pipeline(
 
     logger.info("Analytics built for %d fixtures", len(analytics_list))
 
-    # 4. Generate predictions
-    predictions = predict_all(analytics_list)
+    # 5. Generate predictions (with specified mode)
+    predictions = predict_all(analytics_list, mode=mode)
     logger.info("Generated %d predictions", len(predictions))
 
-    # 5. Polish predictions
+    # 6. Polish predictions
     message = polish_all(predictions)
 
-    # 6. Send to Telegram
+    # 7. Send to Telegram
     if not dry_run:
         logger.info("Sending predictions to Telegram...")
         success = send_message(message)

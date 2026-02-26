@@ -30,6 +30,15 @@ class Settings:
     # Scheduler
     PREDICTION_RUN_TIME: str = os.getenv("PREDICTION_RUN_TIME", "09:00")
 
+    # Prediction Mode: "stat" (original), "ml" (machine learning only), "hybrid" (combined)
+    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "hybrid")
+
+    # Number of historical seasons to use for ML training (default: 3)
+    HISTORICAL_SEASONS: int = int(os.getenv("HISTORICAL_SEASONS", "3"))
+
+    # Weight of ML prediction in hybrid mode (0.0-1.0, remainder goes to stat-based)
+    ML_WEIGHT: float = float(os.getenv("ML_WEIGHT", "0.5"))
+
     # Top 7 European League IDs (Sportmonks v3)
     LEAGUE_IDS: list = [
         271,   # Premier League (England)

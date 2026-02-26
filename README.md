@@ -2,6 +2,14 @@
 
 A powerful football prediction engine that fetches data from **Sportmonks API** and **Odds API**, processes analytics, and posts polished weekend predictions to **Telegram** across the **Top 7 European Leagues**.
 
+## ✨ Features
+
+- **Hybrid Prediction Mode**: Combines statistical analysis with machine learning for sharper predictions
+- **ML Model Training**: Trains on past 3 seasons of historical data (configurable)
+- **Multiple Prediction Modes**: Choose between stats-only, ML-only, or hybrid
+- **Real-time Odds Integration**: Incorporates live betting odds for enhanced accuracy
+- **Automated Weekend Predictions**: Scheduled to run every Friday
+
 ---
 
 ## 🏆 Supported Leagues
@@ -17,6 +25,25 @@ A powerful football prediction engine that fetches data from **Sportmonks API** 
 
 ---
 
+## 🧠 Prediction Modes
+
+ScoreBorga 2.5 supports three prediction modes:
+
+| Mode | Description |
+|------|-------------|
+| `stat` | Statistics-based weighted scoring using form, H2H, home advantage, and odds |
+| `ml` | Machine learning model trained on past 3 seasons of historical match data |
+| `hybrid` | **Default** - Combines both approaches for sharper predictions |
+
+### Hybrid Mode (Recommended)
+The hybrid mode blends statistical analysis with machine learning predictions:
+- Uses a Random Forest classifier trained on historical data
+- Combines recent form, head-to-head records, home advantage, and odds
+- Configurable ML weight (default: 50% ML + 50% statistics)
+- Automatically trains on first run using past 3 seasons of data
+
+---
+
 ## 🏗️ Project Structure
 ```
 ScoreBorga2.5/
@@ -24,20 +51,25 @@ ScoreBorga2.5/
 │   └── settings.py           # API keys, league IDs, config
 ├── data/
 │   ├── sportmonks.py         # Sportmonks API client
-│   └── odds_api.py           # Odds API client
+│   ├── odds_api.py           # Odds API client
+│   └── historical.py         # Historical data fetcher for ML training
 ├── engine/
-│   ├── predictor.py          # Core prediction logic
+│   ├── predictor.py          # Core prediction logic (stat/ml/hybrid modes)
+│   ├── ml_model.py           # Machine learning model (Random Forest)
 │   ├── analytics.py          # Stats & analytics processing
-│   └── polisher.py           # Polish predictions using external engines
+│   └── polisher.py           # Polish predictions for Telegram
 ├── leagues/
 │   └── top7.py               # Top 7 European leagues definitions
+├── models/
+│   └── ml_predictor.pkl      # Trained ML model (generated at runtime)
 ├── scheduler/
 │   └── weekend_runner.py     # Weekend prediction scheduler
 ├── output/
 │   ├── telegram_bot.py       # Telegram bot dispatcher
-│   └── dispatcher.py        # Main output dispatcher
+│   └── dispatcher.py         # Main output dispatcher
 ├── tests/
-│   └── test_predictor.py     # Unit tests
+│   ├── test_predictor.py     # Unit tests for predictor
+│   └── test_ml_model.py      # Unit tests for ML model
 ├── .env.example              # Environment variable template
 ├── requirements.txt          # Python dependencies
 └── README.md
@@ -66,8 +98,30 @@ cp .env.example .env
 
 ### 4. Run the prediction engine
 ```bash
+# Run predictions immediately (hybrid mode by default)
+python scheduler/weekend_runner.py --run-now
+
+# Start the scheduler (runs every Friday at 09:00)
 python scheduler/weekend_runner.py
 ```
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SPORTMONKS_API_KEY` | Sportmonks API key (required) | - |
+| `ODDS_API_KEY` | Odds API key (required) | - |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token (required) | - |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID (required) | - |
+| `TIMEZONE` | Timezone for scheduling | `Europe/London` |
+| `PREDICTION_RUN_TIME` | Time to run predictions | `09:00` |
+| `PREDICTION_MODE` | Prediction mode: `stat`, `ml`, or `hybrid` | `hybrid` |
+| `HISTORICAL_SEASONS` | Number of past seasons for ML training | `3` |
+| `ML_WEIGHT` | ML weight in hybrid mode (0.0-1.0) | `0.5` |
 
 ---
 
@@ -110,6 +164,9 @@ Predictions are automatically posted to your configured Telegram channel/group e
    | `TELEGRAM_CHAT_ID` | *(your chat id)* |
    | `TIMEZONE` | `Europe/London` |
    | `PREDICTION_RUN_TIME` | `09:00` |
+   | `PREDICTION_MODE` | `hybrid` |
+   | `HISTORICAL_SEASONS` | `3` |
+   | `ML_WEIGHT` | `0.5` |
 4. Click **Create Background Worker** — Render will build the Docker image and start the service.
 
 ---
