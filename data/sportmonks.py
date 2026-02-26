@@ -64,12 +64,77 @@ class SportmonksClient:
     # Public methods
     # ------------------------------------------------------------------
 
+    def get_league(self, league_id: int, include: Optional[str] = None) -> Dict:
+        """
+        Fetch a single league by its Sportmonks ID.
+        Returns the league data dict (the 'data' key from the API response).
+
+        Args:
+            league_id: Sportmonks league ID.
+            include: Optional comma/semicolon-separated include string
+                     (e.g. "seasons", "currentSeason;stages").
+        """
+        params: Dict = {}
+        if include:
+            params["include"] = include
+        data = self._get(f"leagues/{league_id}", params=params)
+        return data.get("data", {})
+
+    def get_fixtures_by_date_range(
+        self,
+        date_from: str,
+        date_to: str,
+        league_ids: Optional[List[int]] = None,
+    ) -> List[Dict]:
+        """
+        Fetch fixtures within a date range for the specified leagues.
+        Covers both historical (past) and current/upcoming fixtures.
+
+        Args:
+            date_from: Start date in YYYY-MM-DD format.
+            date_to: End date in YYYY-MM-DD format.
+            league_ids: Sportmonks league IDs to filter by (defaults to settings.LEAGUE_IDS).
+        """
+        league_ids = league_ids or settings.LEAGUE_IDS
+        league_ids_str = ";".join(str(lid) for lid in league_ids)
+        return self._paginate(
+            f"fixtures/between/{date_from}/{date_to}",
+            params={
+                "filters": f"fixtureLeagues:{league_ids_str}",
+                "include": "participants;scores;league",
+            },
+        )
+
+    def get_standings(
+        self,
+        league_ids: Optional[List[int]] = None,
+        season_id: Optional[int] = None,
+        include: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Fetch standings for the specified leagues, optionally filtered by season.
+        Uses the GET All Standings endpoint with standingLeagues/standingSeasons filters.
+
+        Args:
+            league_ids: Sportmonks league IDs to filter by (defaults to settings.LEAGUE_IDS).
+            season_id: Optional Sportmonks season ID to restrict standings to one season.
+            include: Optional include string (e.g. "participant;rule;details").
+        """
+        league_ids = league_ids or settings.LEAGUE_IDS
+        league_ids_str = ";".join(str(lid) for lid in league_ids)
+        filters = f"standingLeagues:{league_ids_str}"
+        if season_id is not None:
+            filters += f";standingSeasons:{season_id}"
+        params: Dict = {"filters": filters}
+        if include:
+            params["include"] = include
+        return self._paginate("standings", params=params)
+
     def get_weekend_fixtures(self, league_ids: Optional[List[int]] = None) -> List[Dict]:
         """
         Fetch upcoming fixtures for the weekend (Friday–Sunday) across the
-        specified leagues (defaults to all Top 7 leagues).
+        specified leagues (defaults to all supported leagues).
         """
-        league_ids = league_ids or settings.LEAGUE_IDS
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
 
@@ -82,16 +147,7 @@ class SportmonksClient:
         date_to = sunday.strftime("%Y-%m-%d")
 
         logger.info("Fetching fixtures from %s to %s", date_from, date_to)
-
-        league_ids_str = ";".join(str(lid) for lid in league_ids)
-        fixtures = self._paginate(
-            "fixtures/between/{}/{}".format(date_from, date_to),
-            params={
-                "filters": f"fixtureLeagues:{league_ids_str}",
-                "include": "participants;scores;league",
-            },
-        )
-        return fixtures
+        return self.get_fixtures_by_date_range(date_from, date_to, league_ids)
 
     def get_team_statistics(self, team_id: int, season_id: int) -> Dict:
         """

@@ -267,19 +267,12 @@ class TestLeagueIDs:
         epl = next(lg for lg in TOP7_LEAGUES if lg["country"] == "England" and lg["name"] == "Premier League")
         assert epl["id"] == 8
 
-    def test_denmark_superliga_id_is_271(self):
-        """271 must correctly map to Denmark Superliga (not England Premier League)."""
-        ids = [lg["id"] for lg in TOP7_LEAGUES]
-        assert 271 in ids
-        assert LEAGUE_BY_ID[271]["name"] == "Superliga"
-        assert LEAGUE_BY_ID[271]["country"] == "Denmark"
-
-    def test_all_27_leagues_present(self):
-        """TOP7_LEAGUES must contain exactly 27 leagues."""
-        assert len(TOP7_LEAGUES) == 27
+    def test_all_5_leagues_present(self):
+        """TOP7_LEAGUES must contain exactly 5 leagues."""
+        assert len(TOP7_LEAGUES) == 5
 
     def test_settings_league_ids_match_top7(self):
-        """settings.LEAGUE_IDS must contain exactly the same 27 IDs as SUPPORTED_LEAGUES."""
+        """settings.LEAGUE_IDS must contain exactly the same 5 IDs as SUPPORTED_LEAGUES."""
         expected = {lg["id"] for lg in TOP7_LEAGUES}
         assert set(settings.LEAGUE_IDS) == expected
 

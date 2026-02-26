@@ -72,11 +72,8 @@ class HistoricalDataFetcher:
             List of season dicts sorted by year descending
         """
         try:
-            data = self.client._get(
-                f"leagues/{league_id}",
-                params={"include": "seasons"}
-            )
-            seasons = data.get("data", {}).get("seasons", [])
+            league = self.client.get_league(league_id, include="seasons")
+            seasons = league.get("seasons", [])
             # Filter for completed seasons and sort by end date
             completed_seasons = [
                 s for s in seasons
