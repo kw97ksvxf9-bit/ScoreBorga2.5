@@ -39,6 +39,9 @@ class Settings:
     # Weight of ML prediction in hybrid mode (0.0-1.0, remainder goes to stat-based)
     ML_WEIGHT: float = float(os.getenv("ML_WEIGHT", "0.5"))
 
+    # Lookback window (days) for fetching recent team fixtures used in form calculation
+    RECENT_FIXTURES_LOOKBACK_DAYS: int = int(os.getenv("RECENT_FIXTURES_LOOKBACK_DAYS", "180"))
+
     # Top 7 European League IDs (Sportmonks v3)
     LEAGUE_IDS: list = [
         271,   # Premier League (England)
