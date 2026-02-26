@@ -83,44 +83,34 @@ Predictions are automatically posted to your configured Telegram channel/group e
 
 ---
 
-## 🚀 Deploying on DigitalOcean
+## 🚀 Deploying on Render
 
-### Option A — App Platform (recommended)
+### Option A — Blueprint (recommended)
 
 1. Push this repository to GitHub.
-2. In the [DigitalOcean App Platform](https://cloud.digitalocean.com/apps), create a new app and point it at your repository.
-3. DigitalOcean will detect `.do/app.yaml` and pre-fill the service configuration.
-4. Set the four secret environment variables in the App Platform dashboard:
+2. In the [Render Dashboard](https://dashboard.render.com/), click **New → Blueprint** and connect your repository.
+3. Render will detect `render.yaml` and pre-fill the worker service configuration.
+4. Set the four secret environment variables when prompted (marked `sync: false`):
    - `SPORTMONKS_API_KEY`
    - `ODDS_API_KEY`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
-5. Deploy — the worker starts and runs predictions every Friday at 09:00 UTC.
+5. Deploy — the worker starts and runs predictions every Friday at 09:00 Europe/London time.
 
-Alternatively, use the [doctl](https://docs.digitalocean.com/reference/doctl/) CLI:
-```bash
-doctl apps create --spec .do/app.yaml
-```
+### Option B — Manual service
 
-### Option B — Droplet (Docker)
-
-1. Provision a Ubuntu Droplet and install Docker:
-   ```bash
-   apt-get update && apt-get install -y docker.io docker-compose-plugin
-   ```
-2. Copy the project to the Droplet and create your `.env` from the template:
-   ```bash
-   cp .env.example .env
-   # Fill in your API keys
-   ```
-3. Build and start the container:
-   ```bash
-   docker compose up -d --build
-   ```
-4. View live logs:
-   ```bash
-   docker compose logs -f
-   ```
+1. In the [Render Dashboard](https://dashboard.render.com/), click **New → Background Worker**.
+2. Connect your GitHub repository and choose **Docker** as the runtime.
+3. Set the environment variables:
+   | Key | Value |
+   |-----|-------|
+   | `SPORTMONKS_API_KEY` | *(your key)* |
+   | `ODDS_API_KEY` | *(your key)* |
+   | `TELEGRAM_BOT_TOKEN` | *(your token)* |
+   | `TELEGRAM_CHAT_ID` | *(your chat id)* |
+   | `TIMEZONE` | `Europe/London` |
+   | `PREDICTION_RUN_TIME` | `09:00` |
+4. Click **Create Background Worker** — Render will build the Docker image and start the service.
 
 ---
 

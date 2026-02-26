@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: scoreborga-2-5
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: ODDS_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TIMEZONE
+        value: Europe/London
+      - key: PREDICTION_RUN_TIME
+        value: "09:00"
