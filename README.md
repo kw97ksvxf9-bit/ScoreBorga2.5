@@ -63,13 +63,15 @@ ScoreBorga2.5/
 ├── models/
 │   └── ml_predictor.pkl      # Trained ML model (generated at runtime)
 ├── scheduler/
-│   └── weekend_runner.py     # Weekend prediction scheduler
+│   ├── weekend_runner.py     # Weekend prediction scheduler (CLI entry point)
+│   └── schedule_utils.py     # Timezone-aware next-run calculation helpers
 ├── output/
 │   ├── telegram_bot.py       # Telegram bot dispatcher
 │   └── dispatcher.py         # Main output dispatcher
 ├── tests/
 │   ├── test_predictor.py     # Unit tests for predictor
-│   └── test_ml_model.py      # Unit tests for ML model
+│   ├── test_ml_model.py      # Unit tests for ML model
+│   └── test_schedule_utils.py  # Unit tests for timezone-aware scheduling
 ├── .env.example              # Environment variable template
 ├── requirements.txt          # Python dependencies
 └── README.md
@@ -101,8 +103,11 @@ cp .env.example .env
 # Run predictions immediately (hybrid mode by default)
 python scheduler/weekend_runner.py --run-now
 
-# Start the scheduler (runs every Friday at 09:00)
+# Start the weekly scheduler (runs every Friday at PREDICTION_RUN_TIME in TIMEZONE)
 python scheduler/weekend_runner.py
+
+# Run immediately on startup, then continue scheduling weekly
+python scheduler/weekend_runner.py --run-once-then-schedule
 ```
 
 ---
@@ -117,11 +122,21 @@ python scheduler/weekend_runner.py
 | `ODDS_API_KEY` | Odds API key (required) | - |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token (required) | - |
 | `TELEGRAM_CHAT_ID` | Telegram chat ID (required) | - |
-| `TIMEZONE` | Timezone for scheduling | `Europe/London` |
-| `PREDICTION_RUN_TIME` | Time to run predictions | `09:00` |
+| `TIMEZONE` | Timezone for scheduling (used for next-run calculation) | `Europe/London` |
+| `PREDICTION_RUN_TIME` | Time to run predictions (HH:MM in `TIMEZONE`) | `09:00` |
 | `PREDICTION_MODE` | Prediction mode: `stat`, `ml`, or `hybrid` | `hybrid` |
 | `HISTORICAL_SEASONS` | Number of past seasons for ML training | `3` |
 | `ML_WEIGHT` | ML weight in hybrid mode (0.0-1.0) | `0.5` |
+
+## Scheduler CLI Reference
+
+| Command | Behaviour |
+|---------|-----------|
+| `python scheduler/weekend_runner.py` | Start the timezone-aware weekly scheduler (every Friday at `PREDICTION_RUN_TIME` in `TIMEZONE`) |
+| `python scheduler/weekend_runner.py --run-now` | Run the pipeline once immediately and exit |
+| `python scheduler/weekend_runner.py --run-once-then-schedule` | Run the pipeline immediately, then enter the weekly schedule loop |
+
+> **Timezone handling**: Next-run times are calculated in `TIMEZONE` (e.g. `Europe/London`) and converted to the correct wall-clock instant, so the job runs at the correct local time regardless of the server's system timezone.
 
 ---
 
@@ -149,7 +164,7 @@ Predictions are automatically posted to your configured Telegram channel/group e
    - `ODDS_API_KEY`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
-5. Deploy — the worker starts and runs predictions every Friday at 09:00 Europe/London time.
+5. Deploy — the worker starts and runs predictions every Friday at 09:00 Europe/London time (timezone-aware).
 
 ### Option B — Manual service
 
