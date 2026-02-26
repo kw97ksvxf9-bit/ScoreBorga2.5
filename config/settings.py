@@ -42,15 +42,35 @@ class Settings:
     # Lookback window (days) for fetching recent team fixtures used in form calculation
     RECENT_FIXTURES_LOOKBACK_DAYS: int = int(os.getenv("RECENT_FIXTURES_LOOKBACK_DAYS", "180"))
 
-    # Top 7 European League IDs (Sportmonks v3)
+    # European League IDs (Sportmonks v3) – 27 leagues across top European competitions
     LEAGUE_IDS: list = [
+        181,   # Admiral Bundesliga (Austria)
+        208,   # Pro League (Belgium)
+        244,   # 1. HNL (Croatia)
+        271,   # Superliga (Denmark)
         8,     # Premier League (England)
-        564,   # La Liga (Spain)
+        9,     # Championship (England)
+        24,    # FA Cup (England)
+        27,    # Carabao Cup (England)
+        1371,  # UEFA Europa League Play-offs
+        301,   # Ligue 1 (France)
         82,    # Bundesliga (Germany)
         384,   # Serie A (Italy)
-        301,   # Ligue 1 (France)
+        387,   # Serie B (Italy)
+        390,   # Coppa Italia (Italy)
         72,    # Eredivisie (Netherlands)
-        462,   # Primeira Liga (Portugal)
+        444,   # Eliteserien (Norway)
+        453,   # Ekstraklasa (Poland)
+        462,   # Liga Portugal (Portugal)
+        486,   # Premier League (Russia)
+        501,   # Premiership (Scotland)
+        564,   # La Liga (Spain)
+        567,   # La Liga 2 (Spain)
+        570,   # Copa Del Rey (Spain)
+        573,   # Allsvenskan (Sweden)
+        591,   # Super League (Switzerland)
+        600,   # Super Lig (Turkey)
+        609,   # Premier League (Ukraine)
     ]
 
 

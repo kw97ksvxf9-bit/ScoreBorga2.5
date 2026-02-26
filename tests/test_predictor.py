@@ -263,21 +263,28 @@ class TestPredictAll:
 
 class TestLeagueIDs:
     def test_epl_id_is_8(self):
-        """Premier League must map to Sportmonks league_id 8, not 271 (Denmark Superliga)."""
-        epl = next(lg for lg in TOP7_LEAGUES if lg["name"] == "Premier League")
+        """England Premier League must map to Sportmonks league_id 8."""
+        epl = next(lg for lg in TOP7_LEAGUES if lg["country"] == "England" and lg["name"] == "Premier League")
         assert epl["id"] == 8
 
-    def test_epl_id_not_271(self):
-        """271 (Denmark Superliga) must not appear in TOP7_LEAGUES."""
+    def test_denmark_superliga_id_is_271(self):
+        """271 must correctly map to Denmark Superliga (not England Premier League)."""
         ids = [lg["id"] for lg in TOP7_LEAGUES]
-        assert 271 not in ids
+        assert 271 in ids
+        assert LEAGUE_BY_ID[271]["name"] == "Superliga"
+        assert LEAGUE_BY_ID[271]["country"] == "Denmark"
+
+    def test_all_27_leagues_present(self):
+        """TOP7_LEAGUES must contain exactly 27 leagues."""
+        assert len(TOP7_LEAGUES) == 27
 
     def test_settings_league_ids_match_top7(self):
-        """settings.LEAGUE_IDS must contain exactly the same IDs as TOP7_LEAGUES."""
+        """settings.LEAGUE_IDS must contain exactly the same 27 IDs as SUPPORTED_LEAGUES."""
         expected = {lg["id"] for lg in TOP7_LEAGUES}
         assert set(settings.LEAGUE_IDS) == expected
 
     def test_league_by_id_contains_epl(self):
-        """LEAGUE_BY_ID lookup must resolve league_id 8 to Premier League."""
+        """LEAGUE_BY_ID lookup must resolve league_id 8 to England Premier League."""
         assert 8 in LEAGUE_BY_ID
         assert LEAGUE_BY_ID[8]["name"] == "Premier League"
+        assert LEAGUE_BY_ID[8]["country"] == "England"
