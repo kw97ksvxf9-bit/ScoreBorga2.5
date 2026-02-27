@@ -18,7 +18,7 @@ from config.settings import settings
 # ---------------------------------------------------------------------------
 
 def _make_fixture(fixture_id: int, starting_at: str) -> dict:
-    return {"id": fixture_id, "starting_at": starting_at}
+    return {"id": fixture_id, "starting_at": starting_at, "scores": [{"description": "FT"}]}
 
 
 def _client() -> SportmonksClient:
@@ -40,28 +40,32 @@ class TestGetRecentFixtures:
             assert endpoint.startswith("fixtures/between/")
 
     def test_endpoint_contains_date_range(self):
-        """Endpoint path should embed today and the lookback date."""
+        """Endpoint path should embed today and the lookback date plus the team id."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_recent_fixtures(team_id=42)
             endpoint = mock_paginate.call_args[0][0]
-            # fixtures/between/YYYY-MM-DD/YYYY-MM-DD
+            # fixtures/between/date/YYYY-MM-DD/YYYY-MM-DD/{team_id}
             parts = endpoint.split("/")
-            assert len(parts) == 4
+            assert len(parts) == 6
             assert parts[0] == "fixtures"
             assert parts[1] == "between"
+            assert parts[2] == "date"
             # Rough date-format check
-            for date_part in parts[2:]:
+            for date_part in parts[3:5]:
                 datetime.strptime(date_part, "%Y-%m-%d")
 
-    def test_filter_includes_team_and_ft_status(self):
-        """The API filters param must include the team id and fixtureStatus:FT."""
+    def test_team_id_in_endpoint_path(self):
+        """The team ID must appear in the endpoint path; no invalid query filters."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_recent_fixtures(team_id=99)
-            params = mock_paginate.call_args[1]["params"]
-            assert "fixtureTeams:99" in params["filters"]
-            assert "fixtureStatus:FT" in params["filters"]
+            endpoint = mock_paginate.call_args[0][0]
+            assert endpoint.endswith("/99")
+            params = mock_paginate.call_args[1].get("params", {})
+            filters = params.get("filters", "")
+            assert "fixtureTeams" not in filters
+            assert "fixtureStatus" not in filters
 
     def test_returns_empty_list_on_empty_response(self):
         """When API returns no fixtures the method should return []."""
@@ -138,6 +142,23 @@ class TestGetRecentFixtures:
             params = mock_paginate.call_args[1]["params"]
             assert "participants" in params["include"]
             assert "scores" in params["include"]
+
+    def test_filters_to_completed_fixtures(self):
+        """Only fixtures with FT/AET/AP score descriptions should be returned."""
+        fixtures = [
+            {"id": 1, "starting_at": "2025-01-01T15:00:00+00:00", "scores": [{"description": "FT"}]},
+            {"id": 2, "starting_at": "2025-01-02T15:00:00+00:00", "scores": []},
+            {"id": 3, "starting_at": "2025-01-03T15:00:00+00:00", "scores": [{"description": "CURRENT"}]},
+            {"id": 4, "starting_at": "2025-01-04T15:00:00+00:00", "scores": [{"description": "AET"}]},
+        ]
+        client = _client()
+        with patch.object(client, "_paginate", return_value=fixtures):
+            result = client.get_recent_fixtures(team_id=1, count=10)
+        ids = [f["id"] for f in result]
+        assert 1 in ids   # FT
+        assert 4 in ids   # AET
+        assert 2 not in ids  # no scores
+        assert 3 not in ids  # live (CURRENT)
 
 
 # ---------------------------------------------------------------------------

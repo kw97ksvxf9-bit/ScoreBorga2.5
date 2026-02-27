@@ -13,6 +13,7 @@ Orchestrates the full prediction pipeline:
 """
 
 import logging
+from collections import Counter
 from typing import List, Optional
 
 from data.sportmonks import SportmonksClient
@@ -103,6 +104,9 @@ def run_pipeline(
     logger.info("Fetching weekend fixtures from Sportmonks...")
     fixtures = sm_client.get_weekend_fixtures(league_ids)
     logger.info("Found %d fixtures", len(fixtures))
+    if fixtures:
+        league_counts = Counter(f.get("league_id") for f in fixtures)
+        logger.debug("Fixtures by league_id: %s", dict(league_counts))
 
     if not fixtures:
         logger.warning("No fixtures found for this weekend.")
