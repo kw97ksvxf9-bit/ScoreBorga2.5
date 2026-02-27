@@ -15,6 +15,18 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Score descriptions that indicate a fixture has finished.
+_COMPLETED_SCORE_DESCRIPTIONS = {"FT", "AET", "AP"}
+
+
+def _is_completed(fixture: dict) -> bool:
+    """Return True if the fixture appears to have finished (best-effort check)."""
+    for score in fixture.get("scores", []):
+        desc = (score.get("description") or "").upper()
+        if desc in _COMPLETED_SCORE_DESCRIPTIONS:
+            return True
+    return False
+
 
 class SportmonksClient:
     """Client for the Sportmonks Football API v3."""
@@ -183,15 +195,18 @@ class SportmonksClient:
 
         try:
             fixtures = self._paginate(
-                f"fixtures/between/{date_from}/{date_to}",
-                params={
-                    "filters": f"fixtureTeams:{team_id};fixtureStatus:FT",
-                    "include": "participants;scores",
-                },
+                f"fixtures/between/date/{date_from}/{date_to}/{team_id}",
+                params={"include": "participants;scores"},
             )
         except requests.exceptions.RequestException as exc:
             logger.warning("Could not fetch recent fixtures for team %s: %s", team_id, exc)
             return []
 
-        fixtures.sort(key=lambda f: f.get("starting_at", ""), reverse=True)
-        return fixtures[:count]
+        completed = [f for f in fixtures if _is_completed(f)]
+        if not completed:
+            logger.warning("No completed fixtures found for team %s", team_id)
+        else:
+            logger.debug("Found %d completed fixtures for team %s", len(completed), team_id)
+
+        completed.sort(key=lambda f: f.get("starting_at", ""), reverse=True)
+        return completed[:count]
