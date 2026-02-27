@@ -100,7 +100,8 @@ class SportmonksClient:
     ) -> List[Dict]:
         """
         Fetch fixtures within a date range for the specified leagues.
-        Covers both historical (past) and current/upcoming fixtures.
+        Fetches each league individually to avoid the multi-ID fixtureLeagues
+        filter being silently ignored on lower-tier Sportmonks plans.
 
         Args:
             date_from: Start date in YYYY-MM-DD format.
@@ -108,14 +109,24 @@ class SportmonksClient:
             league_ids: Sportmonks league IDs to filter by (defaults to settings.LEAGUE_IDS).
         """
         league_ids = league_ids or settings.LEAGUE_IDS
-        league_ids_str = ";".join(str(lid) for lid in league_ids)
-        return self._paginate(
-            f"fixtures/between/{date_from}/{date_to}",
-            params={
-                "filters": f"fixtureLeagues:{league_ids_str}",
-                "include": "participants;scores;league",
-            },
-        )
+        all_fixtures: List[Dict] = []
+
+        for league_id in league_ids:
+            logger.info("Fetching fixtures for league_id=%d (%s to %s)", league_id, date_from, date_to)
+            try:
+                fixtures = self._paginate(
+                    f"fixtures/between/{date_from}/{date_to}",
+                    params={
+                        "filters": f"fixtureLeagues:{league_id}",
+                        "include": "participants;scores;league",
+                    },
+                )
+                logger.info("  → %d fixtures found for league_id=%d", len(fixtures), league_id)
+                all_fixtures.extend(fixtures)
+            except Exception as exc:
+                logger.warning("Failed to fetch fixtures for league_id=%d: %s", league_id, exc)
+
+        return all_fixtures
 
     def get_standings(
         self,
@@ -144,21 +155,31 @@ class SportmonksClient:
 
     def get_weekend_fixtures(self, league_ids: Optional[List[int]] = None) -> List[Dict]:
         """
-        Fetch upcoming fixtures for the weekend (Friday–Sunday) across the
-        specified leagues (defaults to all supported leagues).
+        Fetch fixtures for the current/upcoming weekend (Friday–Sunday).
+        Works correctly regardless of what day of the week it is called.
         """
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
+        weekday = now.weekday()  # Mon=0, Tue=1, ..., Fri=4, Sat=5, Sun=6
 
-        # Find the upcoming Friday
-        days_until_friday = (4 - now.weekday()) % 7
-        friday = now + timedelta(days=days_until_friday)
+        # If already in a weekend (Fri/Sat/Sun), anchor to this Friday.
+        # Otherwise, jump forward to the next Friday.
+        if weekday == 4:    # Friday
+            days_to_friday = 0
+        elif weekday == 5:  # Saturday
+            days_to_friday = -1
+        elif weekday == 6:  # Sunday
+            days_to_friday = -2
+        else:               # Mon–Thu: upcoming Friday
+            days_to_friday = 4 - weekday
+
+        friday = now + timedelta(days=days_to_friday)
         sunday = friday + timedelta(days=2)
 
         date_from = friday.strftime("%Y-%m-%d")
         date_to = sunday.strftime("%Y-%m-%d")
 
-        logger.info("Fetching fixtures from %s to %s", date_from, date_to)
+        logger.info("Fetching weekend fixtures from %s to %s", date_from, date_to)
         return self.get_fixtures_by_date_range(date_from, date_to, league_ids)
 
     def get_team_statistics(self, team_id: int, season_id: int) -> Dict:
