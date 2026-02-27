@@ -6,6 +6,13 @@ Uses scikit-learn to train a classifier on historical match data
 from the past N seasons to predict match outcomes.
 """
 
+# =============================================================================
+# ML MODEL — CURRENTLY ON HOLD
+# This module is preserved for future use but is NOT called in the active
+# prediction pipeline. To re-enable, set PREDICTION_MODE to "ml", "hybrid",
+# or "ensemble" in your .env AND remove the fallback guard in predictor.py.
+# =============================================================================
+
 import logging
 import os
 import pickle

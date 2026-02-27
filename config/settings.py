@@ -30,15 +30,22 @@ class Settings:
     # Scheduler
     PREDICTION_RUN_TIME: str = os.getenv("PREDICTION_RUN_TIME", "09:00")
 
-    # Prediction Mode: "stat" (original), "ml" (machine learning only), "hybrid" (combined), "ensemble"
-    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "ensemble")
+    # Prediction Mode: "stat" | "ml" | "hybrid" | "ensemble"
+    # ML modes are currently ON HOLD — use "stat" only
+    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "stat")
 
+    # Number of recent matches to use for form calculation (3–7 recommended)
+    FORM_MATCH_WINDOW: int = int(os.getenv("FORM_MATCH_WINDOW", "5"))
+
+    # ML – currently on hold
     # Number of historical seasons to use for ML training (default: 3)
     HISTORICAL_SEASONS: int = int(os.getenv("HISTORICAL_SEASONS", "3"))
 
+    # ML – currently on hold
     # Weight of ML prediction in hybrid mode (0.0-1.0, remainder goes to stat-based)
     ML_WEIGHT: float = float(os.getenv("ML_WEIGHT", "0.5"))
 
+    # ML – currently on hold
     # Ensemble model weights (RF, GB, LR)
     ENSEMBLE_RF_WEIGHT: float = float(os.getenv("ENSEMBLE_RF_WEIGHT", "0.40"))
     ENSEMBLE_GB_WEIGHT: float = float(os.getenv("ENSEMBLE_GB_WEIGHT", "0.40"))
