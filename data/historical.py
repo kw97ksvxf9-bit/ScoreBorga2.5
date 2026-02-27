@@ -111,10 +111,12 @@ class HistoricalDataFetcher:
             List of completed fixture dicts
         """
         try:
+            # State ID 5 = FT (Full Time), 7 = AET, 8 = FT_PEN
+            # Using 5 to get regular full-time completed matches
             fixtures = self.client._paginate(
                 f"fixtures",
                 params={
-                    "filters": f"fixtureSeasons:{season_id};fixtureStatus:FT",
+                    "filters": f"seasons:{season_id};states:5",
                     "include": "participants;scores;statistics",
                     "per_page": 100,
                 }

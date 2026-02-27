@@ -229,8 +229,8 @@ class TestGetFixturesByDateRange:
                 call[1]["params"]["filters"]
                 for call in mock_paginate.call_args_list
             ]
-            assert "fixtureLeagues:8" in filters
-            assert "fixtureLeagues:82" in filters
+            assert "leagues:8" in filters
+            assert "leagues:82" in filters
 
     def test_uses_default_league_ids_when_none_given(self):
         """Default settings.LEAGUE_IDS must each get their own _paginate call."""
@@ -243,7 +243,7 @@ class TestGetFixturesByDateRange:
                 for call in mock_paginate.call_args_list
             ]
             for lid in settings.LEAGUE_IDS:
-                assert f"fixtureLeagues:{lid}" in filters
+                assert f"leagues:{lid}" in filters
 
     def test_includes_participants_scores_league(self):
         """participants, scores, and league must be present in every include param."""
@@ -305,12 +305,12 @@ class TestGetStandings:
             assert endpoint == "standings"
 
     def test_filters_by_provided_league_ids(self):
-        """Explicit league IDs must appear in the standingLeagues filter."""
+        """Explicit league IDs must appear in the league_id filter."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_standings(league_ids=[8, 82])
             params = mock_paginate.call_args[1]["params"]
-            assert "standingLeagues:8;82" in params["filters"]
+            assert "league_id:8,82" in params["filters"]
 
     def test_uses_default_league_ids_when_none_given(self):
         """Default settings.LEAGUE_IDS must be applied when league_ids is omitted."""
@@ -322,20 +322,20 @@ class TestGetStandings:
                 assert str(lid) in params["filters"]
 
     def test_season_filter_added_when_provided(self):
-        """When season_id is given it must appear as standingSeasons filter."""
+        """When season_id is given it must appear as season_id filter."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_standings(season_id=12345)
             params = mock_paginate.call_args[1]["params"]
-            assert "standingSeasons:12345" in params["filters"]
+            assert "season_id:12345" in params["filters"]
 
     def test_season_filter_absent_when_not_provided(self):
-        """When season_id is omitted, standingSeasons must not appear in filters."""
+        """When season_id is omitted, season_id must not appear in filters."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_standings()
             params = mock_paginate.call_args[1]["params"]
-            assert "standingSeasons" not in params["filters"]
+            assert "season_id" not in params["filters"]
 
     def test_include_passed_as_param(self):
         """When include is given it must appear in the params dict."""
