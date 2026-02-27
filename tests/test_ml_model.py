@@ -241,30 +241,15 @@ class TestPredictFixtureWithMode:
         result = predict_fixture(SAMPLE_ANALYTICS, mode="stat")
         assert "Mode: Statistics" in result["reasoning"]
 
-    @patch("engine.ml_model.get_ml_predictor")
-    def test_hybrid_mode(self, mock_get_predictor):
-        mock_predictor = MagicMock()
-        mock_predictor.predict.return_value = {
-            "prediction": HOME_WIN,
-            "confidence": 60.0,
-            "probabilities": {"home": 0.6, "draw": 0.2, "away": 0.2},
-        }
-        mock_get_predictor.return_value = mock_predictor
-
+    def test_hybrid_mode_fallback(self):
+        # hybrid mode is ON HOLD — falls back to stat
         result = predict_fixture(SAMPLE_ANALYTICS, mode="hybrid")
-        assert "Mode: Hybrid (ML+Stats)" in result["reasoning"]
+        assert "Mode: Statistics" in result["reasoning"]
 
-    @patch("engine.ml_model.predict_with_ml")
-    def test_ml_mode(self, mock_predict_ml):
-        mock_predict_ml.return_value = {
-            "prediction": AWAY_WIN,
-            "confidence": 55.0,
-            "probabilities": {"home": 0.25, "draw": 0.2, "away": 0.55},
-        }
-
+    def test_ml_mode_fallback(self):
+        # ml mode is ON HOLD — falls back to stat
         result = predict_fixture(SAMPLE_ANALYTICS, mode="ml")
-        assert "Mode: ML Model" in result["reasoning"]
-        assert result["prediction"] == AWAY_WIN
+        assert "Mode: Statistics" in result["reasoning"]
 
 
 class TestPredictAll:

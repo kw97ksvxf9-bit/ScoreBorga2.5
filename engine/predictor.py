@@ -247,6 +247,13 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
     """
     mode = mode or settings.PREDICTION_MODE
 
+    if mode in ("ml", "hybrid", "ensemble"):
+        logger.warning(
+            "ML prediction modes are currently ON HOLD. "
+            "Falling back to 'stat' mode."
+        )
+        mode = "stat"
+
     if mode == "ml":
         # Import here to avoid circular imports
         from engine.ml_model import predict_with_ml

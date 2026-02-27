@@ -7,6 +7,8 @@ analytics per fixture that can be fed into the predictor.
 import logging
 from typing import Dict, List, Optional, Tuple
 
+from config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 # Result codes used internally
@@ -226,6 +228,11 @@ def build_fixture_analytics(
     away_id = away_p.get("id") if away_p else None
     home_name = home_p.get("name", "Home") if home_p else "Home"
     away_name = away_p.get("name", "Away") if away_p else "Away"
+
+    # Limit recent fixtures to the configured form window (last N matches)
+    window = settings.FORM_MATCH_WINDOW
+    home_recent = home_recent[-window:]
+    away_recent = away_recent[-window:]
 
     home_form = calculate_form(home_recent, home_id) if home_id else {}
     away_form = calculate_form(away_recent, away_id) if away_id else {}
