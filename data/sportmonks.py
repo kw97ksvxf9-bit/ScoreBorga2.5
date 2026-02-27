@@ -117,7 +117,7 @@ class SportmonksClient:
                 fixtures = self._paginate(
                     f"fixtures/between/{date_from}/{date_to}",
                     params={
-                        "filters": f"fixtureLeagues:{league_id}",
+                        "filters": f"leagues:{league_id}",
                         "include": "participants;scores;league",
                     },
                 )
@@ -136,7 +136,7 @@ class SportmonksClient:
     ) -> List[Dict]:
         """
         Fetch standings for the specified leagues, optionally filtered by season.
-        Uses the GET All Standings endpoint with standingLeagues/standingSeasons filters.
+        Uses the GET All Standings endpoint with league_id/season_id filters.
 
         Args:
             league_ids: Sportmonks league IDs to filter by (defaults to settings.LEAGUE_IDS).
@@ -144,10 +144,10 @@ class SportmonksClient:
             include: Optional include string (e.g. "participant;rule;details").
         """
         league_ids = league_ids or settings.LEAGUE_IDS
-        league_ids_str = ";".join(str(lid) for lid in league_ids)
-        filters = f"standingLeagues:{league_ids_str}"
+        league_ids_str = ",".join(str(lid) for lid in league_ids)
+        filters = f"league_id:{league_ids_str}"
         if season_id is not None:
-            filters += f";standingSeasons:{season_id}"
+            filters += f";season_id:{season_id}"
         params: Dict = {"filters": filters}
         if include:
             params["include"] = include
