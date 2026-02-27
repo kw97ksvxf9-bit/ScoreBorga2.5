@@ -30,14 +30,25 @@ class Settings:
     # Scheduler
     PREDICTION_RUN_TIME: str = os.getenv("PREDICTION_RUN_TIME", "09:00")
 
-    # Prediction Mode: "stat" (original), "ml" (machine learning only), "hybrid" (combined)
-    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "hybrid")
+    # Prediction Mode: "stat" (original), "ml" (machine learning only), "hybrid" (combined), "ensemble"
+    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "ensemble")
 
     # Number of historical seasons to use for ML training (default: 3)
     HISTORICAL_SEASONS: int = int(os.getenv("HISTORICAL_SEASONS", "3"))
 
     # Weight of ML prediction in hybrid mode (0.0-1.0, remainder goes to stat-based)
     ML_WEIGHT: float = float(os.getenv("ML_WEIGHT", "0.5"))
+
+    # Ensemble model weights (RF, GB, LR)
+    ENSEMBLE_RF_WEIGHT: float = float(os.getenv("ENSEMBLE_RF_WEIGHT", "0.40"))
+    ENSEMBLE_GB_WEIGHT: float = float(os.getenv("ENSEMBLE_GB_WEIGHT", "0.40"))
+    ENSEMBLE_LR_WEIGHT: float = float(os.getenv("ENSEMBLE_LR_WEIGHT", "0.20"))
+
+    # Side-market probability thresholds
+    BTTS_THRESHOLD: float = float(os.getenv("BTTS_THRESHOLD", "0.50"))
+    OVER_1_5_THRESHOLD: float = float(os.getenv("OVER_1_5_THRESHOLD", "0.60"))
+    OVER_2_5_THRESHOLD: float = float(os.getenv("OVER_2_5_THRESHOLD", "0.50"))
+    OVER_3_5_THRESHOLD: float = float(os.getenv("OVER_3_5_THRESHOLD", "0.40"))
 
     # Lookback window (days) for fetching recent team fixtures used in form calculation
     RECENT_FIXTURES_LOOKBACK_DAYS: int = int(os.getenv("RECENT_FIXTURES_LOOKBACK_DAYS", "180"))

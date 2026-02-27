@@ -225,7 +225,7 @@ class TestPredictFixture:
                     "team1_win_rate": 0.8, "team2_win_rate": 0.0, "draw_rate": 0.2},
             "odds": {"home": 1.4, "draw": 4.5, "away": 7.0},
         }
-        pred = predict_fixture(analytics)
+        pred = predict_fixture(analytics, mode="stat")
         assert pred["prediction"] == HOME_WIN
 
     def test_empty_analytics(self):

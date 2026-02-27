@@ -35,6 +35,64 @@ def _extract_score(fixture: Dict, team_location: str) -> int:
     return 0
 
 
+def _compute_btts_rate(fixtures: List[Dict], team_id: int) -> float:
+    """Fraction of team's recent fixtures where both teams scored."""
+    if not fixtures:
+        return 0.0
+    count = 0
+    valid = 0
+    for fixture in fixtures:
+        home_p, away_p = _extract_participants(fixture)
+        if home_p is None or away_p is None:
+            continue
+        is_home = home_p.get("id") == team_id
+        my_location = "home" if is_home else "away"
+        opp_location = "away" if is_home else "home"
+        my_goals = _extract_score(fixture, my_location)
+        opp_goals = _extract_score(fixture, opp_location)
+        valid += 1
+        if my_goals >= 1 and opp_goals >= 1:
+            count += 1
+    return round(count / valid, 4) if valid else 0.0
+
+
+def _compute_over_2_5_rate(fixtures: List[Dict]) -> float:
+    """Fraction of fixtures with total goals > 2."""
+    if not fixtures:
+        return 0.0
+    count = 0
+    valid = 0
+    for fixture in fixtures:
+        home_p, away_p = _extract_participants(fixture)
+        if home_p is None or away_p is None:
+            continue
+        home_goals = _extract_score(fixture, "home")
+        away_goals = _extract_score(fixture, "away")
+        valid += 1
+        if home_goals + away_goals > 2:
+            count += 1
+    return round(count / valid, 4) if valid else 0.0
+
+
+def _compute_clean_sheet_rate(fixtures: List[Dict], team_id: int) -> float:
+    """Fraction of fixtures where the team kept a clean sheet."""
+    if not fixtures:
+        return 0.0
+    count = 0
+    valid = 0
+    for fixture in fixtures:
+        home_p, away_p = _extract_participants(fixture)
+        if home_p is None or away_p is None:
+            continue
+        is_home = home_p.get("id") == team_id
+        opp_location = "away" if is_home else "home"
+        opp_goals = _extract_score(fixture, opp_location)
+        valid += 1
+        if opp_goals == 0:
+            count += 1
+    return round(count / valid, 4) if valid else 0.0
+
+
 def calculate_form(recent_fixtures: List[Dict], team_id: int) -> Dict:
     """
     Calculate form for a team from its last N completed fixtures.
@@ -162,6 +220,25 @@ def build_fixture_analytics(
     away_form = calculate_form(away_recent, away_id) if away_id else {}
     h2h_stats = calculate_h2h_stats(h2h_fixtures, home_id, away_id) if (home_id and away_id) else {}
 
+    # Compute rate-based features from recent fixtures
+    home_btts_rate = _compute_btts_rate(home_recent, home_id) if home_id else 0.0
+    away_btts_rate = _compute_btts_rate(away_recent, away_id) if away_id else 0.0
+    home_over_2_5_rate = _compute_over_2_5_rate(home_recent)
+    away_over_2_5_rate = _compute_over_2_5_rate(away_recent)
+    home_clean_sheet_rate = _compute_clean_sheet_rate(home_recent, home_id) if home_id else 0.0
+    away_clean_sheet_rate = _compute_clean_sheet_rate(away_recent, away_id) if away_id else 0.0
+    h2h_over_2_5_rate = _compute_over_2_5_rate(h2h_fixtures)
+
+    # Compute proper h2h BTTS rate using both team ids
+    if home_id and away_id and h2h_fixtures:
+        h2h_btts_count = sum(
+            1 for f in h2h_fixtures
+            if _extract_score(f, "home") >= 1 and _extract_score(f, "away") >= 1
+        )
+        h2h_btts_rate = round(h2h_btts_count / len(h2h_fixtures), 4)
+    else:
+        h2h_btts_rate = 0.0
+
     return {
         "fixture_id": fixture.get("id"),
         "home_team": home_name,
@@ -174,4 +251,14 @@ def build_fixture_analytics(
         "away_form": away_form,
         "h2h": h2h_stats,
         "odds": odds or {},
+        "home_adv_factor": 1.1,
+        "home_btts_rate": home_btts_rate,
+        "away_btts_rate": away_btts_rate,
+        "home_over_2_5_rate": home_over_2_5_rate,
+        "away_over_2_5_rate": away_over_2_5_rate,
+        "home_clean_sheet_rate": home_clean_sheet_rate,
+        "away_clean_sheet_rate": away_clean_sheet_rate,
+        "h2h_btts_rate": h2h_btts_rate,
+        "h2h_over_2_5_rate": h2h_over_2_5_rate,
     }
+
