@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytz
 import requests
 
 from data.sportmonks import SportmonksClient
@@ -212,54 +213,83 @@ class TestGetLeague:
 
 class TestGetFixturesByDateRange:
     def test_uses_between_endpoint(self):
-        """Endpoint must be fixtures/between/{date_from}/{date_to}."""
+        """Each per-league call must use fixtures/between/{date_from}/{date_to}."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
-            client.get_fixtures_by_date_range("2025-01-01", "2025-01-31")
+            client.get_fixtures_by_date_range("2025-01-01", "2025-01-31", league_ids=[8])
             endpoint = mock_paginate.call_args[0][0]
             assert endpoint == "fixtures/between/2025-01-01/2025-01-31"
 
     def test_filters_by_provided_league_ids(self):
-        """Explicit league IDs must appear in the fixtureLeagues filter."""
+        """Each league ID must be fetched in a separate _paginate call."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_fixtures_by_date_range("2025-01-01", "2025-01-31", league_ids=[8, 82])
-            params = mock_paginate.call_args[1]["params"]
-            assert "fixtureLeagues:8;82" in params["filters"]
+            assert mock_paginate.call_count == 2
+            filters = [
+                call[1]["params"]["filters"]
+                for call in mock_paginate.call_args_list
+            ]
+            assert "fixtureLeagues:8" in filters
+            assert "fixtureLeagues:82" in filters
 
     def test_uses_default_league_ids_when_none_given(self):
-        """Default settings.LEAGUE_IDS must be applied when league_ids is omitted."""
+        """Default settings.LEAGUE_IDS must each get their own _paginate call."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_fixtures_by_date_range("2025-01-01", "2025-01-31")
-            params = mock_paginate.call_args[1]["params"]
+            assert mock_paginate.call_count == len(settings.LEAGUE_IDS)
+            filters = [
+                call[1]["params"]["filters"]
+                for call in mock_paginate.call_args_list
+            ]
             for lid in settings.LEAGUE_IDS:
-                assert str(lid) in params["filters"]
+                assert f"fixtureLeagues:{lid}" in filters
 
     def test_includes_participants_scores_league(self):
-        """participants, scores, and league must be present in the include param."""
+        """participants, scores, and league must be present in every include param."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
-            client.get_fixtures_by_date_range("2025-01-01", "2025-01-31")
+            client.get_fixtures_by_date_range("2025-01-01", "2025-01-31", league_ids=[8])
             params = mock_paginate.call_args[1]["params"]
             assert "participants" in params["include"]
             assert "scores" in params["include"]
             assert "league" in params["include"]
 
     def test_returns_fixtures_list(self):
-        """Return value should be the list returned by _paginate."""
-        fixtures = [{"id": 1}, {"id": 2}]
+        """Fixtures from all leagues must be merged into a single list."""
+        fixtures_8 = [{"id": 1}]
+        fixtures_82 = [{"id": 2}]
         client = _client()
-        with patch.object(client, "_paginate", return_value=fixtures):
-            result = client.get_fixtures_by_date_range("2025-01-01", "2025-01-31")
-        assert result == fixtures
+        with patch.object(
+            client, "_paginate", side_effect=[fixtures_8, fixtures_82]
+        ):
+            result = client.get_fixtures_by_date_range(
+                "2025-01-01", "2025-01-31", league_ids=[8, 82]
+            )
+        assert result == [{"id": 1}, {"id": 2}]
 
     def test_returns_empty_list_when_no_fixtures(self):
         """Empty _paginate response should propagate as empty list."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]):
-            result = client.get_fixtures_by_date_range("2025-01-01", "2025-01-31")
+            result = client.get_fixtures_by_date_range(
+                "2025-01-01", "2025-01-31", league_ids=[8]
+            )
         assert result == []
+
+    def test_skips_failed_league_and_returns_others(self):
+        """A failing league call should be skipped; other leagues' fixtures returned."""
+        client = _client()
+        with patch.object(
+            client,
+            "_paginate",
+            side_effect=[Exception("API error"), [{"id": 10}]],
+        ):
+            result = client.get_fixtures_by_date_range(
+                "2025-01-01", "2025-01-31", league_ids=[8, 82]
+            )
+        assert result == [{"id": 10}]
 
 
 # ---------------------------------------------------------------------------
@@ -338,3 +368,84 @@ class TestGetStandings:
         with patch.object(client, "_paginate", return_value=[]):
             result = client.get_standings()
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# get_weekend_fixtures tests
+# ---------------------------------------------------------------------------
+
+def _make_aware(year, month, day, hour=12, tz_str="UTC"):
+    """Create a timezone-aware datetime for the given date."""
+    tz = pytz.timezone(tz_str)
+    return tz.localize(datetime(year, month, day, hour, 0, 0))
+
+
+class TestGetWeekendFixtures:
+    """
+    Tests for the Friday-anchor logic in get_weekend_fixtures.
+    We freeze 'now' to a known weekday and verify the date range passed to
+    get_fixtures_by_date_range is always the Friday–Sunday of that weekend.
+    """
+
+    def _run(self, fake_now: datetime):
+        """Call get_weekend_fixtures with a frozen clock and return (date_from, date_to)."""
+        client = _client()
+        with patch("data.sportmonks.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_now
+            with patch.object(client, "get_fixtures_by_date_range", return_value=[]) as mock_range:
+                client.get_weekend_fixtures(league_ids=[8])
+                return mock_range.call_args[0][0], mock_range.call_args[0][1]
+
+    def test_called_on_friday_uses_same_friday(self):
+        """When called on a Friday, date_from must be that same Friday."""
+        # 2025-01-03 is a Friday
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 3, 12, 0, 0))
+        date_from, date_to = self._run(fake_now)
+        assert date_from == "2025-01-03"
+        assert date_to == "2025-01-05"
+
+    def test_called_on_saturday_uses_preceding_friday(self):
+        """When called on a Saturday, date_from must be the preceding Friday."""
+        # 2025-01-04 is a Saturday
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 4, 12, 0, 0))
+        date_from, date_to = self._run(fake_now)
+        assert date_from == "2025-01-03"
+        assert date_to == "2025-01-05"
+
+    def test_called_on_sunday_uses_preceding_friday(self):
+        """When called on a Sunday, date_from must be the Friday two days prior."""
+        # 2025-01-05 is a Sunday
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 5, 12, 0, 0))
+        date_from, date_to = self._run(fake_now)
+        assert date_from == "2025-01-03"
+        assert date_to == "2025-01-05"
+
+    def test_called_on_monday_uses_upcoming_friday(self):
+        """When called on a Monday, date_from must be the upcoming Friday."""
+        # 2025-01-06 is a Monday
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 6, 12, 0, 0))
+        date_from, date_to = self._run(fake_now)
+        assert date_from == "2025-01-10"
+        assert date_to == "2025-01-12"
+
+    def test_called_on_thursday_uses_upcoming_friday(self):
+        """When called on a Thursday, date_from must be the next day (Friday)."""
+        # 2025-01-09 is a Thursday
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 9, 12, 0, 0))
+        date_from, date_to = self._run(fake_now)
+        assert date_from == "2025-01-10"
+        assert date_to == "2025-01-12"
+
+    def test_date_to_is_always_sunday(self):
+        """date_to must always be exactly 2 days after date_from (Sunday)."""
+        tz = pytz.timezone(settings.TIMEZONE)
+        fake_now = tz.localize(datetime(2025, 1, 7, 12, 0, 0))  # Tuesday
+        date_from, date_to = self._run(fake_now)
+        from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+        to_dt = datetime.strptime(date_to, "%Y-%m-%d")
+        assert (to_dt - from_dt).days == 2
