@@ -11,6 +11,8 @@ from engine.predictor import (
     predict_all,
     _form_score,
     _implied_prob,
+    _poisson_over_prob,
+    _totals_prediction,
     HOME_WIN,
     DRAW,
     AWAY_WIN,
@@ -281,3 +283,136 @@ class TestLeagueIDs:
         assert 8 in LEAGUE_BY_ID
         assert LEAGUE_BY_ID[8]["name"] == "Premier League"
         assert LEAGUE_BY_ID[8]["country"] == "England"
+
+
+# ---------------------------------------------------------------------------
+# Heuristic totals tests
+# ---------------------------------------------------------------------------
+
+class TestPoissonOverProb:
+    def test_high_expected_goals_over_1_5(self):
+        """With many expected goals, P(over 1.5) should be high."""
+        prob = _poisson_over_prob(3.0, 1.5)
+        assert prob > 0.8
+
+    def test_low_expected_goals_over_3_5(self):
+        """With very few expected goals, P(over 3.5) should be low."""
+        prob = _poisson_over_prob(0.5, 3.5)
+        assert prob < 0.05
+
+    def test_probability_in_range(self):
+        for lam in [0.5, 1.5, 2.5, 3.5]:
+            for line in [1.5, 2.5, 3.5]:
+                prob = _poisson_over_prob(lam, line)
+                assert 0.0 <= prob <= 1.0
+
+
+class TestTotalsPrediction:
+    def _analytics(self, home_scored=1.5, home_conceded=1.0,
+                   away_scored=1.2, away_conceded=1.3):
+        return {
+            "home_form": {
+                "avg_goals_scored": home_scored,
+                "avg_goals_conceded": home_conceded,
+            },
+            "away_form": {
+                "avg_goals_scored": away_scored,
+                "avg_goals_conceded": away_conceded,
+            },
+        }
+
+    def test_output_shape(self):
+        result = _totals_prediction(self._analytics())
+        assert "totals" in result
+        assert "best_total" in result
+        totals = result["totals"]
+        assert "over_1_5" in totals
+        assert "over_2_5" in totals
+        assert "over_3_5" in totals
+
+    def test_probabilities_in_range(self):
+        result = _totals_prediction(self._analytics())
+        for key in ("over_1_5", "over_2_5", "over_3_5"):
+            assert 0.0 <= result["totals"][key] <= 100.0
+
+    def test_ordering(self):
+        """P(over 1.5) >= P(over 2.5) >= P(over 3.5)."""
+        result = _totals_prediction(self._analytics())
+        t = result["totals"]
+        assert t["over_1_5"] >= t["over_2_5"]
+        assert t["over_2_5"] >= t["over_3_5"]
+
+    def test_best_total_is_valid_line(self):
+        result = _totals_prediction(self._analytics())
+        assert result["best_total"]["line"] in ("Over 1.5", "Over 2.5", "Over 3.5")
+
+    def test_best_total_probability_matches_totals(self):
+        result = _totals_prediction(self._analytics())
+        line = result["best_total"]["line"]
+        prob = result["best_total"]["probability"]
+        line_key = line.replace("Over ", "over_").replace(".", "_")
+        assert prob == result["totals"][line_key]
+
+    def test_missing_form_uses_defaults(self):
+        """Should not raise when form data is missing."""
+        result = _totals_prediction({})
+        assert "totals" in result
+        assert "best_total" in result
+
+    def test_predict_fixture_includes_totals(self):
+        """predict_fixture should include totals and best_total in output."""
+        analytics = {
+            "fixture_id": 1,
+            "home_team": "A",
+            "away_team": "B",
+            "kickoff": None,
+            "league_id": 8,
+            "home_form": {"avg_goals_scored": 1.5, "avg_goals_conceded": 1.0},
+            "away_form": {"avg_goals_scored": 1.2, "avg_goals_conceded": 1.3},
+            "h2h": {},
+            "odds": {},
+        }
+        pred = predict_fixture(analytics)
+        assert "totals" in pred
+        assert "best_total" in pred
+        assert pred["best_total"]["line"] in ("Over 1.5", "Over 2.5", "Over 3.5")
+
+
+# ---------------------------------------------------------------------------
+# Top-7 dispatcher filtering tests
+# ---------------------------------------------------------------------------
+
+class TestTop7Filtering:
+    def _make_predictions(self, confidences):
+        return [
+            {
+                "fixture_id": i,
+                "home_team": f"Home{i}",
+                "away_team": f"Away{i}",
+                "prediction": HOME_WIN,
+                "confidence": c,
+                "scores": {"home": 0.5, "draw": 0.3, "away": 0.2},
+            }
+            for i, c in enumerate(confidences)
+        ]
+
+    def test_more_than_7_returns_top_7(self):
+        confidences = [50, 80, 70, 60, 90, 55, 75, 65, 85, 45]
+        predictions = self._make_predictions(confidences)
+        top7 = sorted(predictions, key=lambda p: p.get("confidence", 0.0), reverse=True)[:7]
+        assert len(top7) == 7
+        # Highest confidence should be first
+        assert top7[0]["confidence"] == 90
+
+    def test_fewer_than_7_returns_all(self):
+        confidences = [70, 80, 60]
+        predictions = self._make_predictions(confidences)
+        top7 = sorted(predictions, key=lambda p: p.get("confidence", 0.0), reverse=True)[:7]
+        assert len(top7) == 3
+
+    def test_sorted_descending(self):
+        confidences = [30, 90, 60, 75, 85, 55, 70, 40, 65, 80]
+        predictions = self._make_predictions(confidences)
+        top7 = sorted(predictions, key=lambda p: p.get("confidence", 0.0), reverse=True)[:7]
+        confs = [p["confidence"] for p in top7]
+        assert confs == sorted(confs, reverse=True)

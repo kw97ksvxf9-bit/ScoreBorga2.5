@@ -84,6 +84,21 @@ def polish_prediction(prediction: Dict) -> str:
             f"/ A `{odds.get('away', '-')}`\n"
         )
 
+    best_total = prediction.get("best_total", {})
+    totals = prediction.get("totals", {})
+    totals_line = ""
+    if best_total:
+        totals_line = (
+            f"⚽ *Best Total:* {best_total.get('line', '')} "
+            f"({best_total.get('probability', 0):.1f}%)\n"
+        )
+        if totals:
+            totals_line += (
+                f"📈 *Totals:* O1.5 {totals.get('over_1_5', 0):.1f}% "
+                f"| O2.5 {totals.get('over_2_5', 0):.1f}% "
+                f"| O3.5 {totals.get('over_3_5', 0):.1f}%\n"
+            )
+
     message = (
         f"⚽ *{home}* vs *{away}*\n"
         f"🏆 {league_name} ({country})\n"
@@ -92,6 +107,7 @@ def polish_prediction(prediction: Dict) -> str:
         f"{outcome_emoji} *Prediction:* {outcome}\n"
         f"{conf_emoji} *Confidence:* {confidence}%\n"
         f"{odds_line}"
+        f"{totals_line}"
         f"\n"
         f"📝 _{reasoning}_\n"
         f"{'─' * 30}"

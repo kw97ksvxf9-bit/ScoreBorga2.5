@@ -2,18 +2,37 @@
 engine/ml_model.py
 Machine Learning model for match outcome prediction in ScoreBorga 2.5.
 
-Uses scikit-learn to train a classifier on historical match data
-from the past N seasons to predict match outcomes.
+Uses scikit-learn to train an ensemble classifier (soft voting) on historical
+match data from the past N seasons to predict match outcomes.
+
+Ensemble members:
+  - Logistic Regression
+  - Random Forest classifier
+  - XGBoost classifier (optional; gracefully skipped if not installed)
 """
 
 import logging
 import os
 import pickle
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+
+try:
+    from xgboost import XGBClassifier
+    _XGBOOST_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _XGBOOST_AVAILABLE = False
+    warnings.warn(
+        "xgboost is not installed. The ensemble will run without XGBoost. "
+        "Install it with: pip install xgboost",
+        ImportWarning,
+        stacklevel=2,
+    )
 
 from config.settings import settings
 
@@ -52,7 +71,13 @@ MODEL_SAVE_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "ml_pr
 
 class MLPredictor:
     """
-    Machine Learning predictor for match outcomes using Random Forest classifier.
+    Machine Learning predictor for match outcomes using a soft-voting ensemble.
+
+    Ensemble members (in order of addition):
+      - Logistic Regression
+      - Random Forest classifier
+      - XGBoost classifier (only when xgboost is installed)
+
     Trained on historical match data from past seasons.
     """
 
@@ -64,9 +89,13 @@ class MLPredictor:
             model_path: Path to load/save the trained model. Defaults to MODEL_SAVE_PATH.
         """
         self.model_path = model_path or MODEL_SAVE_PATH
-        self.model: Optional[RandomForestClassifier] = None
+        # Individual ensemble members
+        self.models: List[Any] = []
         self.scaler: Optional[StandardScaler] = None
         self.is_trained = False
+
+        # Keep a reference to the RF model for feature importances (backwards-compat)
+        self.model: Optional[RandomForestClassifier] = None
 
     def _prepare_features(self, analytics: Dict) -> np.ndarray:
         """
@@ -123,7 +152,7 @@ class MLPredictor:
 
     def train(self, training_samples: List[Dict]) -> bool:
         """
-        Train the ML model on historical match data.
+        Train the ensemble ML model on historical match data.
 
         Args:
             training_samples: List of training sample dicts from HistoricalDataFetcher
@@ -135,7 +164,7 @@ class MLPredictor:
             logger.warning("No training samples provided, cannot train ML model")
             return False
 
-        logger.info("Training ML model on %d samples...", len(training_samples))
+        logger.info("Training ensemble ML model on %d samples...", len(training_samples))
 
         # Extract features and outcomes
         X = []
@@ -163,35 +192,64 @@ class MLPredictor:
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X)
 
-        # Train Random Forest classifier
-        self.model = RandomForestClassifier(
+        # Build ensemble members
+        ensemble = []
+
+        lr = LogisticRegression(
+            max_iter=1000,
+            random_state=42,
+            class_weight="balanced",
+            solver="lbfgs",
+        )
+        lr.fit(X_scaled, y)
+        ensemble.append(("lr", lr))
+
+        rf = RandomForestClassifier(
             n_estimators=100,
             max_depth=10,
             min_samples_split=5,
             min_samples_leaf=2,
             random_state=42,
-            class_weight="balanced",  # Handle class imbalance
+            class_weight="balanced",
         )
-        self.model.fit(X_scaled, y)
+        rf.fit(X_scaled, y)
+        ensemble.append(("rf", rf))
+        self.model = rf  # backwards-compat reference
+
+        if _XGBOOST_AVAILABLE:
+            xgb = XGBClassifier(
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                random_state=42,
+                eval_metric="mlogloss",
+                verbosity=0,
+            )
+            xgb.fit(X_scaled, y)
+            ensemble.append(("xgb", xgb))
+        else:
+            logger.warning("XGBoost not available — ensemble running without XGBoost")
+
+        self.models = ensemble
         self.is_trained = True
 
-        # Log feature importances
-        importances = self.model.feature_importances_
+        # Log RF feature importances for transparency
+        importances = rf.feature_importances_
         feature_importance = sorted(
             zip(FEATURE_NAMES, importances),
             key=lambda x: x[1],
             reverse=True
         )
-        logger.info("Top 5 feature importances:")
+        logger.info("Top 5 RF feature importances:")
         for name, importance in feature_importance[:5]:
             logger.info("  %s: %.4f", name, importance)
 
-        logger.info("ML model training complete")
+        logger.info("Ensemble ML model training complete (%d members)", len(ensemble))
         return True
 
     def predict(self, analytics: Dict) -> Dict:
         """
-        Predict match outcome using the trained ML model.
+        Predict match outcome using soft-voting across the trained ensemble.
 
         Args:
             analytics: Analytics dict from engine/analytics.py
@@ -199,7 +257,7 @@ class MLPredictor:
         Returns:
             Dict with keys: prediction (str), confidence (float 0-100), probabilities (dict)
         """
-        if not self.is_trained or self.model is None:
+        if not self.is_trained or not self.models:
             logger.warning("ML model not trained, returning neutral prediction")
             return {
                 "prediction": "Draw",
@@ -213,24 +271,27 @@ class MLPredictor:
         if self.scaler is not None:
             features = self.scaler.transform(features)
 
-        # Get prediction and probabilities
-        prediction_idx = self.model.predict(features)[0]
-        probabilities = self.model.predict_proba(features)[0]
+        # Soft voting: average predict_proba across all ensemble members
+        # Each model may have seen classes [0, 1, 2]; we aggregate by class index
+        avg_probs = np.zeros(3)  # indices: 0=Home Win, 1=Draw, 2=Away Win
+        for _name, mdl in self.models:
+            proba = mdl.predict_proba(features)[0]
+            classes = mdl.classes_
+            for i, cls in enumerate(classes):
+                if 0 <= cls <= 2:
+                    avg_probs[cls] += proba[i]
+        avg_probs /= len(self.models)
 
-        # Map to outcome labels
+        # Determine winning class
+        prediction_idx = int(np.argmax(avg_probs))
         prediction = OUTCOME_LABELS.get(prediction_idx, "Draw")
-        confidence = float(probabilities[prediction_idx]) * 100
+        confidence = float(avg_probs[prediction_idx]) * 100
 
-        # Build probability dict (handle missing classes)
-        prob_dict = {"home": 0.0, "draw": 0.0, "away": 0.0}
-        classes = self.model.classes_
-        for i, cls in enumerate(classes):
-            if cls == 0:
-                prob_dict["home"] = float(probabilities[i])
-            elif cls == 1:
-                prob_dict["draw"] = float(probabilities[i])
-            elif cls == 2:
-                prob_dict["away"] = float(probabilities[i])
+        prob_dict = {
+            "home": float(avg_probs[0]),
+            "draw": float(avg_probs[1]),
+            "away": float(avg_probs[2]),
+        }
 
         return {
             "prediction": prediction,
@@ -240,7 +301,7 @@ class MLPredictor:
 
     def save_model(self, path: Optional[str] = None) -> bool:
         """
-        Save the trained model to disk.
+        Save the trained ensemble to disk.
 
         Args:
             path: File path to save to. Defaults to self.model_path.
@@ -258,8 +319,8 @@ class MLPredictor:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             with open(save_path, "wb") as f:
-                pickle.dump({"model": self.model, "scaler": self.scaler}, f)
-            logger.info("ML model saved to %s", save_path)
+                pickle.dump({"models": self.models, "scaler": self.scaler}, f)
+            logger.info("Ensemble ML model saved to %s", save_path)
             return True
         except Exception as exc:
             logger.error("Failed to save ML model: %s", exc)
@@ -267,7 +328,7 @@ class MLPredictor:
 
     def load_model(self, path: Optional[str] = None) -> bool:
         """
-        Load a trained model from disk.
+        Load a trained ensemble from disk.
 
         Args:
             path: File path to load from. Defaults to self.model_path.
@@ -279,10 +340,22 @@ class MLPredictor:
         try:
             with open(load_path, "rb") as f:
                 data = pickle.load(f)
-            self.model = data["model"]
+            # Support both old single-model format and new ensemble format
+            if "models" in data:
+                self.models = data["models"]
+                # Rebuild backwards-compat self.model reference (RF if present)
+                for name, mdl in self.models:
+                    if name == "rf":
+                        self.model = mdl
+                        break
+            elif "model" in data:
+                # Legacy single-model file — wrap as single-element ensemble
+                legacy_model = data["model"]
+                self.models = [("rf", legacy_model)]
+                self.model = legacy_model
             self.scaler = data["scaler"]
             self.is_trained = True
-            logger.info("ML model loaded from %s", load_path)
+            logger.info("Ensemble ML model loaded from %s (%d members)", load_path, len(self.models))
             return True
         except FileNotFoundError:
             logger.warning("No saved ML model found at %s", load_path)

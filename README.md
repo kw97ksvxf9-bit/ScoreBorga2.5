@@ -4,7 +4,10 @@ A powerful football prediction engine that fetches data from **Sportmonks API** 
 
 ## ✨ Features
 
-- **Hybrid Prediction Mode**: Combines statistical analysis with machine learning for sharper predictions
+- **Top 7 Predictions**: Only the 7 highest-confidence predictions are sent to Telegram each weekend — no per-league cap
+- **Heuristic Totals & Best Total**: Each match includes Over 1.5 / 2.5 / 3.5 probabilities (Poisson-based) and a single "Best Total" pick
+- **Ensemble ML Model**: Combines Logistic Regression, Random Forest, and XGBoost via soft voting for sharper probability estimates
+- **Hybrid Prediction Mode**: Combines statistical analysis with the ensemble ML model for the best results
 - **ML Model Training**: Trains on past 3 seasons of historical data (configurable)
 - **Multiple Prediction Modes**: Choose between stats-only, ML-only, or hybrid
 - **Real-time Odds Integration**: Incorporates live betting odds for enhanced accuracy
@@ -32,15 +35,55 @@ ScoreBorga 2.5 supports three prediction modes:
 | Mode | Description |
 |------|-------------|
 | `stat` | Statistics-based weighted scoring using form, H2H, home advantage, and odds |
-| `ml` | Machine learning model trained on past 3 seasons of historical match data |
+| `ml` | Ensemble ML model (LR + RF + XGBoost, soft voting) trained on past 3 seasons |
 | `hybrid` | **Default** - Combines both approaches for sharper predictions |
 
 ### Hybrid Mode (Recommended)
-The hybrid mode blends statistical analysis with machine learning predictions:
-- Uses a Random Forest classifier trained on historical data
+The hybrid mode blends statistical analysis with ensemble machine learning predictions:
+- Uses a soft-voting ensemble of Logistic Regression, Random Forest, and XGBoost classifiers
 - Combines recent form, head-to-head records, home advantage, and odds
 - Configurable ML weight (default: 50% ML + 50% statistics)
 - Automatically trains on first run using past 3 seasons of data
+
+---
+
+## 📊 Telegram Output
+
+Each weekend, ScoreBorga 2.5 sends the **top 7 highest-confidence predictions** to your configured Telegram channel, regardless of which league they come from. Each prediction includes:
+
+- Match details (teams, league, kickoff time)
+- Predicted outcome and confidence level
+- Odds (home / draw / away)
+- **Best Total** pick (e.g. `Over 2.5 — 68.4%`)
+- Totals breakdown: `O1.5 | O2.5 | O3.5` probabilities
+- Reasoning summary
+
+---
+
+## ⚽ Heuristic Totals
+
+Totals probabilities are computed without using any external totals markets. The engine uses a simple **expected-goals (xG) approach**:
+
+1. Estimate home xG = average of home attack and away defence averages
+2. Estimate away xG = average of away attack and home defence averages
+3. Sum to get expected total goals (`λ`)
+4. Apply a **Poisson distribution** to compute `P(goals > 1.5)`, `P(goals > 2.5)`, and `P(goals > 3.5)`
+
+The line with the highest probability is selected as the **Best Total** for the match.
+
+---
+
+## 🤖 Ensemble ML Model
+
+The ML predictor uses a **soft-voting ensemble** of three classifiers:
+
+| Model | Notes |
+|-------|-------|
+| Logistic Regression | Fast, interpretable baseline |
+| Random Forest | Robust tree-based classifier |
+| XGBoost | Gradient boosting; requires `xgboost` package |
+
+Probabilities from all available models are averaged (soft vote) before the final prediction is made. If XGBoost is not installed the engine warns and proceeds with the remaining models.
 
 ---
 
@@ -54,8 +97,8 @@ ScoreBorga2.5/
 │   ├── odds_api.py           # Odds API client
 │   └── historical.py         # Historical data fetcher for ML training
 ├── engine/
-│   ├── predictor.py          # Core prediction logic (stat/ml/hybrid modes)
-│   ├── ml_model.py           # Machine learning model (Random Forest)
+│   ├── predictor.py          # Core prediction logic (stat/ml/hybrid + totals)
+│   ├── ml_model.py           # Ensemble ML model (LR + RF + XGBoost)
 │   ├── analytics.py          # Stats & analytics processing
 │   └── polisher.py           # Polish predictions for Telegram
 ├── leagues/
@@ -67,10 +110,10 @@ ScoreBorga2.5/
 │   └── schedule_utils.py     # Timezone-aware next-run calculation helpers
 ├── output/
 │   ├── telegram_bot.py       # Telegram bot dispatcher
-│   └── dispatcher.py         # Main output dispatcher
+│   └── dispatcher.py         # Main output dispatcher (top-7 filter)
 ├── tests/
-│   ├── test_predictor.py     # Unit tests for predictor
-│   ├── test_ml_model.py      # Unit tests for ML model
+│   ├── test_predictor.py     # Unit tests for predictor and totals heuristic
+│   ├── test_ml_model.py      # Unit tests for ensemble ML model
 │   └── test_schedule_utils.py  # Unit tests for timezone-aware scheduling
 ├── .env.example              # Environment variable template
 ├── requirements.txt          # Python dependencies
@@ -91,6 +134,8 @@ cd ScoreBorga2.5
 ```bash
 pip install -r requirements.txt
 ```
+
+> **Note:** `xgboost` is included in `requirements.txt`. If it cannot be installed in your environment, the engine will automatically run the ensemble without XGBoost and log a warning.
 
 ### 3. Configure environment variables
 ```bash
@@ -144,11 +189,6 @@ python scheduler/weekend_runner.py --run-once-then-schedule
 - **Sportmonks API** → [sportmonks.com](https://sportmonks.com)
 - **Odds API** → [the-odds-api.com](https://the-odds-api.com)
 - **Telegram Bot Token** → [@BotFather](https://t.me/BotFather) on Telegram
-
----
-
-## 📬 Telegram Output
-Predictions are automatically posted to your configured Telegram channel/group every weekend with detailed match analysis.
 
 ---
 
