@@ -13,6 +13,7 @@ Supports three prediction modes:
 """
 
 import logging
+import math
 from typing import Dict, Optional
 
 from config.settings import settings
@@ -48,6 +49,79 @@ def _implied_prob(odds: float) -> float:
     if odds <= 1.0:
         return 0.0
     return round(1.0 / odds, 4)
+
+
+def _poisson_over_prob(lam: float, line: float) -> float:
+    """
+    Compute P(goals > line) using a Poisson approximation.
+
+    Args:
+        lam: Expected total goals (lambda for Poisson distribution).
+        line: The over/under line (e.g. 1.5, 2.5, 3.5).
+
+    Returns:
+        Probability as a float in [0, 1].
+    """
+    k_max = int(math.floor(line))  # highest integer <= line, so P(X > line) = P(X >= k_max+1)
+    prob_under = 0.0
+    for k in range(0, k_max + 1):
+        prob_under += math.exp(-lam) * (lam ** k) / math.factorial(k)
+    return max(0.0, min(1.0, 1.0 - prob_under))
+
+
+def _totals_prediction(analytics: Dict) -> Dict:
+    """
+    Compute heuristic totals probabilities for Over 1.5 / 2.5 / 3.5.
+
+    Uses a simple expected-goals approach: combine home attack vs away defence
+    and away attack vs home defence to estimate expected total goals, then
+    apply a Poisson-based approximation.
+
+    Args:
+        analytics: Structured analytics dict from engine/analytics.py.
+
+    Returns:
+        Dict with keys:
+            totals: { over_1_5, over_2_5, over_3_5 } as percentages (float 0-100)
+            best_total: { line: str, probability: float }
+    """
+    home_form = analytics.get("home_form", {})
+    away_form = analytics.get("away_form", {})
+
+    home_avg_scored = home_form.get("avg_goals_scored", 1.2)
+    home_avg_conceded = home_form.get("avg_goals_conceded", 1.0)
+    away_avg_scored = away_form.get("avg_goals_scored", 1.0)
+    away_avg_conceded = away_form.get("avg_goals_conceded", 1.2)
+
+    # Expected goals: average of team attack and opponent defence
+    home_xg = (home_avg_scored + away_avg_conceded) / 2.0
+    away_xg = (away_avg_scored + home_avg_conceded) / 2.0
+    expected_total = max(0.1, home_xg + away_xg)
+
+    over_1_5 = round(_poisson_over_prob(expected_total, 1.5) * 100, 1)
+    over_2_5 = round(_poisson_over_prob(expected_total, 2.5) * 100, 1)
+    over_3_5 = round(_poisson_over_prob(expected_total, 3.5) * 100, 1)
+
+    # Select the best total: the line with the highest probability
+    candidates = [
+        ("Over 1.5", over_1_5),
+        ("Over 2.5", over_2_5),
+        ("Over 3.5", over_3_5),
+    ]
+    # Pick the highest-probability line
+    best_line, best_prob = max(candidates, key=lambda x: x[1])
+
+    return {
+        "totals": {
+            "over_1_5": over_1_5,
+            "over_2_5": over_2_5,
+            "over_3_5": over_3_5,
+        },
+        "best_total": {
+            "line": best_line,
+            "probability": best_prob,
+        },
+    }
 
 
 def _stat_based_prediction(analytics: Dict) -> Dict:
@@ -280,6 +354,7 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
         "reasoning": " | ".join(reasoning_parts),
         "scores": result["scores"],
         "odds": odds,
+        **_totals_prediction(analytics),
     }
 
 

@@ -308,3 +308,77 @@ class TestOutcomeLabels:
         assert OUTCOME_LABELS[0] == "Home Win"
         assert OUTCOME_LABELS[1] == "Draw"
         assert OUTCOME_LABELS[2] == "Away Win"
+
+
+# ---------------------------------------------------------------------------
+# Ensemble predictor tests
+# ---------------------------------------------------------------------------
+
+class TestEnsemblePredictor:
+    def test_ensemble_has_multiple_members(self):
+        predictor = MLPredictor(model_path="/tmp/ensemble_test.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        # Should have at least LR + RF (XGBoost optional)
+        assert len(predictor.models) >= 2
+
+    def test_ensemble_probabilities_sum_to_one(self):
+        predictor = MLPredictor(model_path="/tmp/ensemble_test.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+    def test_ensemble_prediction_valid_outcome(self):
+        predictor = MLPredictor(model_path="/tmp/ensemble_test.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+
+    def test_ensemble_confidence_in_range(self):
+        predictor = MLPredictor(model_path="/tmp/ensemble_test.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert 0 <= result["confidence"] <= 100
+
+    def test_ensemble_save_and_load(self):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "ensemble.pkl")
+            p1 = MLPredictor(model_path=path)
+            p1.train(SAMPLE_TRAINING_DATA)
+            p1.save_model()
+
+            p2 = MLPredictor(model_path=path)
+            assert p2.load_model() is True
+            assert p2.is_trained is True
+            assert len(p2.models) >= 2
+
+            r1 = p1.predict(SAMPLE_ANALYTICS)
+            r2 = p2.predict(SAMPLE_ANALYTICS)
+            assert r1["prediction"] == r2["prediction"]
+
+    def test_legacy_single_model_load(self):
+        """Ensure an old single-model .pkl file is handled gracefully."""
+        import tempfile, os, pickle
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.preprocessing import StandardScaler
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "legacy.pkl")
+            # Create a minimal legacy pickle
+            rf = RandomForestClassifier(n_estimators=5, random_state=42)
+            X = np.random.rand(30, len(FEATURE_NAMES))
+            y = np.array([0, 1, 2] * 10)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            rf.fit(X_scaled, y)
+            with open(path, "wb") as f:
+                pickle.dump({"model": rf, "scaler": scaler}, f)
+
+            p = MLPredictor(model_path=path)
+            assert p.load_model() is True
+            assert p.is_trained is True
+            result = p.predict(SAMPLE_ANALYTICS)
+            assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)

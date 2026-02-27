@@ -176,6 +176,10 @@ def run_pipeline(
     predictions = predict_all(analytics_list, mode=mode)
     logger.info("Generated %d predictions", len(predictions))
 
+    # 5a. Sort by confidence descending and keep only the top 7
+    predictions = sorted(predictions, key=lambda p: p.get("confidence", 0.0), reverse=True)[:7]
+    logger.info("Kept top %d predictions after ranking", len(predictions))
+
     # 6. Polish predictions
     message = polish_all(predictions)
 
