@@ -162,6 +162,13 @@ class HistoricalDataFetcher:
         away_goals = _extract_score(fixture, "away")
         outcome = _determine_outcome(home_goals, away_goals)
 
+        home_matches = max(
+            home_form.get("wins", 0) + home_form.get("draws", 0) + home_form.get("losses", 0), 1
+        )
+        away_matches = max(
+            away_form.get("wins", 0) + away_form.get("draws", 0) + away_form.get("losses", 0), 1
+        )
+
         # Extract features from form data
         features = {
             # Home team features
@@ -183,14 +190,19 @@ class HistoricalDataFetcher:
             "away_avg_goals_scored": away_form.get("avg_goals_scored", 0.0),
             "away_avg_goals_conceded": away_form.get("avg_goals_conceded", 0.0),
             # Derived features
-            "home_form_score": home_form.get("points", 0) / max(
-                (home_form.get("wins", 0) + home_form.get("draws", 0) + home_form.get("losses", 0)) * 3, 1
-            ),
-            "away_form_score": away_form.get("points", 0) / max(
-                (away_form.get("wins", 0) + away_form.get("draws", 0) + away_form.get("losses", 0)) * 3, 1
-            ),
+            "home_form_score": home_form.get("points", 0) / max(home_matches * 3, 1),
+            "away_form_score": away_form.get("points", 0) / max(away_matches * 3, 1),
             "goal_diff_home": home_form.get("goals_scored", 0) - home_form.get("goals_conceded", 0),
             "goal_diff_away": away_form.get("goals_scored", 0) - away_form.get("goals_conceded", 0),
+            # Rate-based features
+            "home_btts_rate": round(home_form.get("btts_count", 0) / home_matches, 4),
+            "away_btts_rate": round(away_form.get("btts_count", 0) / away_matches, 4),
+            "home_over_2_5_rate": round(home_form.get("over_2_5_count", 0) / home_matches, 4),
+            "away_over_2_5_rate": round(away_form.get("over_2_5_count", 0) / away_matches, 4),
+            "h2h_btts_rate": 0.0,
+            "h2h_over_2_5_rate": 0.0,
+            "home_clean_sheet_rate": round(home_form.get("clean_sheets", 0) / home_matches, 4),
+            "away_clean_sheet_rate": round(away_form.get("clean_sheets", 0) / away_matches, 4),
         }
 
         return {
@@ -283,6 +295,7 @@ class HistoricalDataFetcher:
                 "wins": 0, "draws": 0, "losses": 0,
                 "goals_scored": 0, "goals_conceded": 0, "points": 0,
                 "matches": 0,
+                "btts_count": 0, "over_2_5_count": 0, "clean_sheets": 0,
             }
         hf = team_forms[home_id]
         hf["goals_scored"] += home_goals
@@ -298,6 +311,12 @@ class HistoricalDataFetcher:
             hf["losses"] += 1
         hf["avg_goals_scored"] = round(hf["goals_scored"] / hf["matches"], 2)
         hf["avg_goals_conceded"] = round(hf["goals_conceded"] / hf["matches"], 2)
+        if home_goals >= 1 and away_goals >= 1:
+            hf["btts_count"] += 1
+        if home_goals + away_goals > 2:
+            hf["over_2_5_count"] += 1
+        if away_goals == 0:
+            hf["clean_sheets"] += 1
 
         # Update away team form
         if away_id not in team_forms:
@@ -305,6 +324,7 @@ class HistoricalDataFetcher:
                 "wins": 0, "draws": 0, "losses": 0,
                 "goals_scored": 0, "goals_conceded": 0, "points": 0,
                 "matches": 0,
+                "btts_count": 0, "over_2_5_count": 0, "clean_sheets": 0,
             }
         af = team_forms[away_id]
         af["goals_scored"] += away_goals
@@ -320,3 +340,9 @@ class HistoricalDataFetcher:
             af["losses"] += 1
         af["avg_goals_scored"] = round(af["goals_scored"] / af["matches"], 2)
         af["avg_goals_conceded"] = round(af["goals_conceded"] / af["matches"], 2)
+        if home_goals >= 1 and away_goals >= 1:
+            af["btts_count"] += 1
+        if home_goals + away_goals > 2:
+            af["over_2_5_count"] += 1
+        if home_goals == 0:
+            af["clean_sheets"] += 1

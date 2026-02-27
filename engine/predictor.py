@@ -2,7 +2,7 @@
 engine/predictor.py
 Core prediction logic for ScoreBorga 2.5.
 
-Supports three prediction modes:
+Supports four prediction modes:
   - "stat": Uses a weighted scoring model combining:
       - Recent form (last 5 matches)
       - Head-to-head record
@@ -10,6 +10,7 @@ Supports three prediction modes:
       - Implied probability from odds
   - "ml": Uses machine learning model trained on historical data
   - "hybrid": Combines both stat-based and ML predictions for sharper results
+  - "ensemble": Weighted ensemble of RF + GB + LR models
 """
 
 import logging
@@ -199,19 +200,50 @@ def _hybrid_prediction(analytics: Dict) -> Dict:
     }
 
 
+def _ensemble_prediction(analytics: Dict) -> Dict:
+    """
+    Generate a prediction using the weighted ensemble of RF + GB + LR models.
+
+    Args:
+        analytics: Structured analytics dict from engine/analytics.py.
+
+    Returns:
+        Dict with prediction, confidence, scores, and ensemble details.
+    """
+    from engine.ml_model import get_ensemble_predictor
+
+    ensemble = get_ensemble_predictor()
+    result = ensemble.predict(analytics)
+    probs = result["probabilities"]
+
+    return {
+        "prediction": result["prediction"],
+        "confidence": result["confidence"],
+        "scores": {
+            "home": round(probs.get("home", 0.0), 4),
+            "draw": round(probs.get("draw", 0.0), 4),
+            "away": round(probs.get("away", 0.0), 4),
+        },
+    }
+
+
 def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
     """
     Generate a prediction for a single fixture.
 
     Args:
         analytics: Structured analytics dict from engine/analytics.py.
-        mode: Prediction mode ("stat", "ml", or "hybrid"). Defaults to settings.PREDICTION_MODE.
+        mode: Prediction mode ("stat", "ml", "hybrid", or "ensemble").
+              Defaults to settings.PREDICTION_MODE.
 
     Returns:
         Dict with keys:
             fixture_id, home_team, away_team, kickoff,
             prediction (str), confidence (float 0–100),
-            reasoning (str), scores (dict with home/draw/away raw scores).
+            reasoning (str), scores (dict with home/draw/away raw scores),
+            btts, btts_prob, over_1_5, over_1_5_prob,
+            over_2_5, over_2_5_prob, over_3_5, over_3_5_prob,
+            home_xg, away_xg.
     """
     mode = mode or settings.PREDICTION_MODE
 
@@ -230,6 +262,8 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
         }
     elif mode == "hybrid":
         result = _hybrid_prediction(analytics)
+    elif mode == "ensemble":
+        result = _ensemble_prediction(analytics)
     else:  # "stat" or default
         result = _stat_based_prediction(analytics)
 
@@ -266,8 +300,14 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
             reasoning_parts.append(f"ML: {result['ml_prediction']} ({result['ml_confidence']}%)")
     elif mode == "ml":
         reasoning_parts.append("Mode: ML Model")
+    elif mode == "ensemble":
+        reasoning_parts.append("Mode: Ensemble")
     else:
         reasoning_parts.append("Mode: Statistics")
+
+    # Compute side-market predictions via Poisson model
+    from engine.markets import compute_market_predictions
+    markets = compute_market_predictions(analytics)
 
     return {
         "fixture_id": analytics.get("fixture_id"),
@@ -280,6 +320,16 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
         "reasoning": " | ".join(reasoning_parts),
         "scores": result["scores"],
         "odds": odds,
+        "btts": markets["btts"],
+        "btts_prob": markets["btts_prob"],
+        "over_1_5": markets["over_1_5"],
+        "over_1_5_prob": markets["over_1_5_prob"],
+        "over_2_5": markets["over_2_5"],
+        "over_2_5_prob": markets["over_2_5_prob"],
+        "over_3_5": markets["over_3_5"],
+        "over_3_5_prob": markets["over_3_5_prob"],
+        "home_xg": markets["home_xg"],
+        "away_xg": markets["away_xg"],
     }
 
 
@@ -289,7 +339,8 @@ def predict_all(analytics_list: list, mode: Optional[str] = None) -> list:
 
     Args:
         analytics_list: List of dicts from engine/analytics.py.
-        mode: Prediction mode ("stat", "ml", or "hybrid"). Defaults to settings.PREDICTION_MODE.
+        mode: Prediction mode ("stat", "ml", "hybrid", or "ensemble").
+              Defaults to settings.PREDICTION_MODE.
 
     Returns:
         List of prediction dicts.

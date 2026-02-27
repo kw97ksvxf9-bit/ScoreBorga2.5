@@ -216,7 +216,7 @@ class SportmonksClient:
 
         try:
             fixtures = self._paginate(
-                f"fixtures/between/date/{date_from}/{date_to}/{team_id}",
+                f"fixtures/between/{date_from}/{date_to}/{team_id}",
                 params={"include": "participants;scores"},
             )
         except requests.exceptions.RequestException as exc:
@@ -231,3 +231,20 @@ class SportmonksClient:
 
         completed.sort(key=lambda f: f.get("starting_at", ""), reverse=True)
         return completed[:count]
+
+    def get_fixture_statistics(self, fixture_id: int) -> List[Dict]:
+        """
+        Fetch per-team statistics for a completed fixture.
+        Returns team-level stats such as shots, shots on target, possession,
+        passes, corners, fouls etc. for each team.
+        xG (expected goals) is only included if your subscription add-on covers it.
+
+        Endpoint: GET /fixtures/{fixture_id}?include=statistics
+        Returns the statistics list from the fixture data dict.
+        Each entry contains: type_id, participant_id, value.
+        """
+        data = self._get(
+            f"fixtures/{fixture_id}",
+            params={"include": "statistics"}
+        )
+        return data.get("data", {}).get("statistics", [])
