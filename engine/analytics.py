@@ -24,14 +24,25 @@ def _extract_participants(fixture: Dict) -> Tuple[Optional[Dict], Optional[Dict]
 
 
 def _extract_score(fixture: Dict, team_location: str) -> int:
-    """Extract the final score for home or away team from a fixture."""
+    """Extract the final score for home or away team from a fixture.
+    
+    Checks multiple score descriptions in priority order:
+    1. CURRENT - the live/final cumulative score
+    2. FT - full-time score for completed fixtures
+    3. AET - after extra time score
+    4. AP - after penalties score
+    """
     scores = fixture.get("scores", [])
-    for score_entry in scores:
-        if (
-            score_entry.get("description") == "CURRENT"
-            and score_entry.get("score", {}).get("participant") == team_location
-        ):
-            return score_entry["score"].get("goals", 0)
+    # Priority order: prefer CURRENT, then fall back to FT/AET/AP
+    valid_descriptions = ("CURRENT", "FT", "AET", "AP")
+    for desc in valid_descriptions:
+        for score_entry in scores:
+            entry_desc = (score_entry.get("description") or "").upper()
+            if (
+                entry_desc == desc
+                and score_entry.get("score", {}).get("participant") == team_location
+            ):
+                return score_entry["score"].get("goals", 0)
     return 0
 
 

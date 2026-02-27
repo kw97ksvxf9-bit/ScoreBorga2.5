@@ -19,6 +19,7 @@ from engine.analytics import (
     calculate_form,
     calculate_h2h_stats,
     build_fixture_analytics,
+    _extract_score,
 )
 
 
@@ -281,3 +282,123 @@ class TestLeagueIDs:
         assert 8 in LEAGUE_BY_ID
         assert LEAGUE_BY_ID[8]["name"] == "Premier League"
         assert LEAGUE_BY_ID[8]["country"] == "England"
+
+
+# ---------------------------------------------------------------------------
+# _extract_score tests
+# ---------------------------------------------------------------------------
+
+class TestExtractScore:
+    """Tests for the _extract_score function in engine/analytics.py."""
+
+    def test_extracts_current_score(self):
+        """Should extract score when description is 'CURRENT'."""
+        fixture = {
+            "scores": [
+                {"description": "CURRENT", "score": {"participant": "home", "goals": 2}},
+                {"description": "CURRENT", "score": {"participant": "away", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+        assert _extract_score(fixture, "away") == 1
+
+    def test_extracts_ft_score(self):
+        """Should extract score when description is 'FT' (full time)."""
+        fixture = {
+            "scores": [
+                {"description": "FT", "score": {"participant": "home", "goals": 3}},
+                {"description": "FT", "score": {"participant": "away", "goals": 0}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 3
+        assert _extract_score(fixture, "away") == 0
+
+    def test_extracts_aet_score(self):
+        """Should extract score when description is 'AET' (after extra time)."""
+        fixture = {
+            "scores": [
+                {"description": "AET", "score": {"participant": "home", "goals": 2}},
+                {"description": "AET", "score": {"participant": "away", "goals": 2}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+        assert _extract_score(fixture, "away") == 2
+
+    def test_extracts_ap_score(self):
+        """Should extract score when description is 'AP' (after penalties)."""
+        fixture = {
+            "scores": [
+                {"description": "AP", "score": {"participant": "home", "goals": 4}},
+                {"description": "AP", "score": {"participant": "away", "goals": 3}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 4
+        assert _extract_score(fixture, "away") == 3
+
+    def test_prefers_current_over_ft(self):
+        """Should prefer 'CURRENT' over 'FT' when both are present."""
+        fixture = {
+            "scores": [
+                {"description": "FT", "score": {"participant": "home", "goals": 1}},
+                {"description": "CURRENT", "score": {"participant": "home", "goals": 2}},
+                {"description": "FT", "score": {"participant": "away", "goals": 0}},
+                {"description": "CURRENT", "score": {"participant": "away", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+        assert _extract_score(fixture, "away") == 1
+
+    def test_falls_back_to_ft_when_no_current(self):
+        """Should fall back to 'FT' when 'CURRENT' is not available."""
+        fixture = {
+            "scores": [
+                {"description": "FT", "score": {"participant": "home", "goals": 3}},
+                {"description": "FT", "score": {"participant": "away", "goals": 2}},
+                {"description": "1ST_HALF", "score": {"participant": "home", "goals": 1}},
+                {"description": "1ST_HALF", "score": {"participant": "away", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 3
+        assert _extract_score(fixture, "away") == 2
+
+    def test_returns_zero_for_no_matching_scores(self):
+        """Should return 0 when no matching scores are found."""
+        fixture = {
+            "scores": [
+                {"description": "1ST_HALF", "score": {"participant": "home", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 0
+        assert _extract_score(fixture, "away") == 0
+
+    def test_returns_zero_for_empty_scores(self):
+        """Should return 0 when scores list is empty."""
+        fixture = {"scores": []}
+        assert _extract_score(fixture, "home") == 0
+
+    def test_returns_zero_for_missing_scores(self):
+        """Should return 0 when scores key is missing."""
+        fixture = {}
+        assert _extract_score(fixture, "home") == 0
+
+    def test_handles_lowercase_description(self):
+        """Should handle lowercase description (case-insensitive)."""
+        fixture = {
+            "scores": [
+                {"description": "ft", "score": {"participant": "home", "goals": 2}},
+                {"description": "ft", "score": {"participant": "away", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+        assert _extract_score(fixture, "away") == 1
+
+    def test_handles_mixed_case_description(self):
+        """Should handle mixed case description (case-insensitive)."""
+        fixture = {
+            "scores": [
+                {"description": "Ft", "score": {"participant": "home", "goals": 2}},
+                {"description": "Current", "score": {"participant": "away", "goals": 1}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+        assert _extract_score(fixture, "away") == 1
