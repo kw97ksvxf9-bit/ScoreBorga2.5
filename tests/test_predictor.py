@@ -393,12 +393,42 @@ class TestExtractScore:
         assert _extract_score(fixture, "away") == 1
 
     def test_handles_mixed_case_description(self):
-        """Should handle mixed case description (case-insensitive)."""
+        """Should handle mixed case description (case-insensitive) for different teams."""
         fixture = {
             "scores": [
                 {"description": "Ft", "score": {"participant": "home", "goals": 2}},
-                {"description": "Current", "score": {"participant": "away", "goals": 1}},
+                {"description": "aet", "score": {"participant": "away", "goals": 1}},
             ]
         }
         assert _extract_score(fixture, "home") == 2
         assert _extract_score(fixture, "away") == 1
+
+    def test_priority_with_mixed_case(self):
+        """Should prefer 'Current' over 'Ft' even with mixed case for the same team."""
+        fixture = {
+            "scores": [
+                {"description": "ft", "score": {"participant": "home", "goals": 1}},
+                {"description": "Current", "score": {"participant": "home", "goals": 2}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+
+    def test_priority_ft_over_aet(self):
+        """Should prefer 'FT' over 'AET' when both are available."""
+        fixture = {
+            "scores": [
+                {"description": "AET", "score": {"participant": "home", "goals": 3}},
+                {"description": "FT", "score": {"participant": "home", "goals": 2}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
+
+    def test_priority_aet_over_ap(self):
+        """Should prefer 'AET' over 'AP' when both are available (but not CURRENT or FT)."""
+        fixture = {
+            "scores": [
+                {"description": "AP", "score": {"participant": "home", "goals": 5}},
+                {"description": "AET", "score": {"participant": "home", "goals": 2}},
+            ]
+        }
+        assert _extract_score(fixture, "home") == 2
