@@ -41,14 +41,14 @@ class TestGetRecentFixtures:
             assert endpoint.startswith("fixtures/between/")
 
     def test_endpoint_contains_date_range(self):
-        """Endpoint path should embed today and the lookback date plus the team id."""
+        """Endpoint path should embed today and the lookback date (no team id in path)."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_recent_fixtures(team_id=42)
             endpoint = mock_paginate.call_args[0][0]
-            # fixtures/between/YYYY-MM-DD/YYYY-MM-DD/{team_id}
+            # fixtures/between/YYYY-MM-DD/YYYY-MM-DD
             parts = endpoint.split("/")
-            assert len(parts) == 5
+            assert len(parts) == 4
             assert parts[0] == "fixtures"
             assert parts[1] == "between"
             # Rough date-format check
@@ -56,16 +56,15 @@ class TestGetRecentFixtures:
                 datetime.strptime(date_part, "%Y-%m-%d")
 
     def test_team_id_in_endpoint_path(self):
-        """The team ID must appear in the endpoint path; no invalid query filters."""
+        """The team ID must appear in the filters param as teamId:{id}, not in the URL path."""
         client = _client()
         with patch.object(client, "_paginate", return_value=[]) as mock_paginate:
             client.get_recent_fixtures(team_id=99)
             endpoint = mock_paginate.call_args[0][0]
-            assert endpoint.endswith("/99")
+            assert not endpoint.endswith("/99")
             params = mock_paginate.call_args[1].get("params", {})
             filters = params.get("filters", "")
-            assert "fixtureTeams" not in filters
-            assert "fixtureStatus" not in filters
+            assert "teamId:99" in filters
 
     def test_returns_empty_list_on_empty_response(self):
         """When API returns no fixtures the method should return []."""

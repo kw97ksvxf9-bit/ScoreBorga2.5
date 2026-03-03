@@ -216,8 +216,12 @@ class SportmonksClient:
 
         try:
             fixtures = self._paginate(
-                f"fixtures/between/{date_from}/{date_to}/{team_id}",
-                params={"include": "participants;scores"},
+                f"fixtures/between/{date_from}/{date_to}",
+                params={
+                    "filters": f"teamId:{team_id}",
+                    "include": "participants;scores",
+                    "per_page": 25,
+                },
             )
         except requests.exceptions.RequestException as exc:
             logger.warning("Could not fetch recent fixtures for team %s: %s", team_id, exc)
