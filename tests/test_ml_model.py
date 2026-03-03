@@ -12,6 +12,10 @@ from engine.ml_model import (
     FEATURE_NAMES,
     OUTCOME_LABELS,
     predict_with_ml,
+    XGBoostPredictor,
+    CatBoostPredictor,
+    SVMPredictor,
+    EnsemblePredictor,
 )
 from engine.predictor import (
     predict_fixture,
@@ -241,15 +245,15 @@ class TestPredictFixtureWithMode:
         result = predict_fixture(SAMPLE_ANALYTICS, mode="stat")
         assert "Mode: Statistics" in result["reasoning"]
 
-    def test_hybrid_mode_fallback(self):
-        # hybrid mode is ON HOLD — falls back to stat
+    def test_hybrid_mode(self):
+        # hybrid mode is now active
         result = predict_fixture(SAMPLE_ANALYTICS, mode="hybrid")
-        assert "Mode: Statistics" in result["reasoning"]
+        assert "Mode: Hybrid (ML+Stats)" in result["reasoning"]
 
-    def test_ml_mode_fallback(self):
-        # ml mode is ON HOLD — falls back to stat
+    def test_ml_mode(self):
+        # ml mode is now active
         result = predict_fixture(SAMPLE_ANALYTICS, mode="ml")
-        assert "Mode: Statistics" in result["reasoning"]
+        assert "Mode: ML Model" in result["reasoning"]
 
 
 class TestPredictAll:
@@ -293,3 +297,192 @@ class TestOutcomeLabels:
         assert OUTCOME_LABELS[0] == "Home Win"
         assert OUTCOME_LABELS[1] == "Draw"
         assert OUTCOME_LABELS[2] == "Away Win"
+
+
+# ---------------------------------------------------------------------------
+# New predictor tests
+# ---------------------------------------------------------------------------
+
+class TestXGBoostPredictor:
+    def test_init_creates_untrained_model(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        assert predictor.model is None
+        assert predictor.is_trained is False
+
+    def test_train_with_valid_data(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        success = predictor.train(SAMPLE_TRAINING_DATA)
+        assert success is True
+        assert predictor.is_trained is True
+        assert predictor.model is not None
+
+    def test_train_with_empty_data(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        success = predictor.train([])
+        assert success is False
+        assert predictor.is_trained is False
+
+    def test_predict_returns_valid_structure(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert "prediction" in result
+        assert "confidence" in result
+        assert "probabilities" in result
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+        assert 0 <= result["confidence"] <= 100
+        probs = result["probabilities"]
+        assert "home" in probs and "draw" in probs and "away" in probs
+
+    def test_predict_untrained_returns_neutral(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] == "Draw"
+        assert result["confidence"] == pytest.approx(33.3, rel=0.1)
+
+    def test_probabilities_sum_to_one(self):
+        predictor = XGBoostPredictor(model_path="/tmp/test_xgb.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+
+class TestCatBoostPredictor:
+    def test_init_creates_untrained_model(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        assert predictor.model is None
+        assert predictor.is_trained is False
+
+    def test_train_with_valid_data(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        success = predictor.train(SAMPLE_TRAINING_DATA)
+        assert success is True
+        assert predictor.is_trained is True
+        assert predictor.model is not None
+
+    def test_train_with_empty_data(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        success = predictor.train([])
+        assert success is False
+        assert predictor.is_trained is False
+
+    def test_predict_returns_valid_structure(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert "prediction" in result
+        assert "confidence" in result
+        assert "probabilities" in result
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+        assert 0 <= result["confidence"] <= 100
+        probs = result["probabilities"]
+        assert "home" in probs and "draw" in probs and "away" in probs
+
+    def test_predict_untrained_returns_neutral(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] == "Draw"
+        assert result["confidence"] == pytest.approx(33.3, rel=0.1)
+
+    def test_probabilities_sum_to_one(self):
+        predictor = CatBoostPredictor(model_path="/tmp/test_cb.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+
+class TestSVMPredictor:
+    def test_init_creates_untrained_model(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        assert predictor.model is None
+        assert predictor.is_trained is False
+
+    def test_train_with_valid_data(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        success = predictor.train(SAMPLE_TRAINING_DATA)
+        assert success is True
+        assert predictor.is_trained is True
+        assert predictor.model is not None
+
+    def test_train_with_empty_data(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        success = predictor.train([])
+        assert success is False
+        assert predictor.is_trained is False
+
+    def test_predict_returns_valid_structure(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert "prediction" in result
+        assert "confidence" in result
+        assert "probabilities" in result
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+        assert 0 <= result["confidence"] <= 100
+        probs = result["probabilities"]
+        assert "home" in probs and "draw" in probs and "away" in probs
+
+    def test_predict_untrained_returns_neutral(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] == "Draw"
+        assert result["confidence"] == pytest.approx(33.3, rel=0.1)
+
+    def test_probabilities_sum_to_one(self):
+        predictor = SVMPredictor(model_path="/tmp/test_svm.pkl")
+        predictor.train(SAMPLE_TRAINING_DATA)
+        result = predictor.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+
+class TestEnsembleVoting:
+    def _trained_ensemble(self, mode: str) -> EnsemblePredictor:
+        ensemble = EnsemblePredictor(ensemble_mode=mode)
+        ensemble.train(SAMPLE_TRAINING_DATA)
+        return ensemble
+
+    def test_soft_voting_valid_prediction(self):
+        ensemble = self._trained_ensemble("soft")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+
+    def test_soft_voting_confidence_in_range(self):
+        ensemble = self._trained_ensemble("soft")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        assert 0 <= result["confidence"] <= 100
+
+    def test_soft_voting_probabilities_sum_to_one(self):
+        ensemble = self._trained_ensemble("soft")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+    def test_hard_voting_valid_prediction(self):
+        ensemble = self._trained_ensemble("hard")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] in (HOME_WIN, DRAW, AWAY_WIN)
+
+    def test_hard_voting_confidence_in_range(self):
+        ensemble = self._trained_ensemble("hard")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        assert 0 <= result["confidence"] <= 100
+
+    def test_hard_voting_probabilities_sum_to_one(self):
+        ensemble = self._trained_ensemble("hard")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        probs = result["probabilities"]
+        total = probs["home"] + probs["draw"] + probs["away"]
+        assert 0.99 <= total <= 1.01
+
+    def test_untrained_ensemble_returns_neutral(self):
+        ensemble = EnsemblePredictor(ensemble_mode="soft")
+        result = ensemble.predict(SAMPLE_ANALYTICS)
+        assert result["prediction"] == "Draw"
+        assert result["confidence"] == pytest.approx(33.3, rel=0.1)
