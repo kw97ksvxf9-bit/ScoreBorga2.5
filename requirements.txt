@@ -4,9 +4,10 @@ python-telegram-bot>=20.7
 schedule>=1.2.1
 pytest>=7.4.0
 pytz>=2024.1
-# ML dependencies – kept for future use (currently on hold)
+# ML dependencies
 scikit-learn>=1.3.0
 numpy>=1.26.4
 pandas>=2.2.0
 scipy>=1.11.0
 xgboost>=2.0.0
+catboost>=1.2.0

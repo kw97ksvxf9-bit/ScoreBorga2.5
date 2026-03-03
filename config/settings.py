@@ -31,25 +31,27 @@ class Settings:
     PREDICTION_RUN_TIME: str = os.getenv("PREDICTION_RUN_TIME", "09:00")
 
     # Prediction Mode: "stat" | "ml" | "hybrid" | "ensemble"
-    # ML modes are currently ON HOLD — use "stat" only
-    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "stat")
+    PREDICTION_MODE: str = os.getenv("PREDICTION_MODE", "ensemble")
 
     # Number of recent matches to use for form calculation (3–7 recommended)
     FORM_MATCH_WINDOW: int = int(os.getenv("FORM_MATCH_WINDOW", "5"))
 
-    # ML – currently on hold
     # Number of historical seasons to use for ML training (default: 3)
     HISTORICAL_SEASONS: int = int(os.getenv("HISTORICAL_SEASONS", "3"))
 
-    # ML – currently on hold
     # Weight of ML prediction in hybrid mode (0.0-1.0, remainder goes to stat-based)
     ML_WEIGHT: float = float(os.getenv("ML_WEIGHT", "0.5"))
 
-    # ML – currently on hold
-    # Ensemble model weights (RF, GB, LR)
-    ENSEMBLE_RF_WEIGHT: float = float(os.getenv("ENSEMBLE_RF_WEIGHT", "0.40"))
-    ENSEMBLE_GB_WEIGHT: float = float(os.getenv("ENSEMBLE_GB_WEIGHT", "0.40"))
-    ENSEMBLE_LR_WEIGHT: float = float(os.getenv("ENSEMBLE_LR_WEIGHT", "0.20"))
+    # Ensemble model weights (RF, GB, LR, XGB, CB, SVM)
+    ENSEMBLE_RF_WEIGHT:  float = float(os.getenv("ENSEMBLE_RF_WEIGHT",  "0.15"))
+    ENSEMBLE_GB_WEIGHT:  float = float(os.getenv("ENSEMBLE_GB_WEIGHT",  "0.15"))
+    ENSEMBLE_LR_WEIGHT:  float = float(os.getenv("ENSEMBLE_LR_WEIGHT",  "0.05"))
+    ENSEMBLE_XGB_WEIGHT: float = float(os.getenv("ENSEMBLE_XGB_WEIGHT", "0.30"))
+    ENSEMBLE_CB_WEIGHT:  float = float(os.getenv("ENSEMBLE_CB_WEIGHT",  "0.30"))
+    ENSEMBLE_SVM_WEIGHT: float = float(os.getenv("ENSEMBLE_SVM_WEIGHT", "0.10"))
+
+    # Ensemble voting mode: "soft" (weighted average) | "hard" (majority vote)
+    ENSEMBLE_MODE: str = os.getenv("ENSEMBLE_MODE", "soft")
 
     # Side-market probability thresholds
     BTTS_THRESHOLD: float = float(os.getenv("BTTS_THRESHOLD", "0.50"))

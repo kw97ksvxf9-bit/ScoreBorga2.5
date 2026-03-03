@@ -8,9 +8,10 @@ Supports four prediction modes:
       - Head-to-head record
       - Home advantage
       - Implied probability from odds
-  - "ml": Uses machine learning model trained on historical data
+  - "ml": Uses Random Forest ML model trained on historical data
   - "hybrid": Combines both stat-based and ML predictions for sharper results
-  - "ensemble": Weighted ensemble of RF + GB + LR models
+  - "ensemble": Weighted ensemble of RF + GB + LR + XGBoost + CatBoost + SVM models,
+                supporting both soft (weighted-average probability) and hard (majority-class) voting
 """
 
 import logging
@@ -246,13 +247,6 @@ def predict_fixture(analytics: Dict, mode: Optional[str] = None) -> Dict:
             home_xg, away_xg.
     """
     mode = mode or settings.PREDICTION_MODE
-
-    if mode in ("ml", "hybrid", "ensemble"):
-        logger.warning(
-            "ML prediction modes are currently ON HOLD. "
-            "Falling back to 'stat' mode."
-        )
-        mode = "stat"
 
     if mode == "ml":
         # Import here to avoid circular imports
