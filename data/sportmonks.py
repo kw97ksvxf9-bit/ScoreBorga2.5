@@ -216,9 +216,8 @@ class SportmonksClient:
 
         try:
             fixtures = self._paginate(
-                f"fixtures/between/{date_from}/{date_to}",
+                f"fixtures/between/{date_from}/{date_to}/{team_id}",
                 params={
-                    "filters": f"teamId:{team_id}",
                     "include": "participants;scores",
                     "per_page": 25,
                 },
