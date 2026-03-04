@@ -5,6 +5,7 @@ Fetches fixtures, team statistics, and head-to-head records.
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +18,19 @@ logger = logging.getLogger(__name__)
 
 # Score descriptions that indicate a fixture has finished.
 _COMPLETED_SCORE_DESCRIPTIONS = {"FT", "AET", "AP"}
+
+# Retry delays (seconds) for HTTP 429 responses.
+_RETRY_DELAYS = (5, 10, 20)
+
+
+def _fixture_league_id(fixture: dict) -> Optional[int]:
+    """Return the league_id from a fixture dict (top-level or nested)."""
+    if fixture.get("league_id"):
+        return fixture["league_id"]
+    league = fixture.get("league")
+    if isinstance(league, dict):
+        return league.get("id")
+    return None
 
 
 def _is_completed(fixture: dict) -> bool:
@@ -45,16 +59,26 @@ class SportmonksClient:
         """Perform a GET request and return the parsed JSON response."""
         url = f"{self.base_url}/{endpoint}"
         params = params or {}
-        try:
-            response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError as exc:
-            logger.error("Sportmonks HTTP error %s – %s", exc.response.status_code, url)
-            raise
-        except requests.exceptions.RequestException as exc:
-            logger.error("Sportmonks request failed: %s", exc)
-            raise
+        for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
+            try:
+                response = self.session.get(url, params=params, timeout=15)
+                if response.status_code == 429 and delay is not None:
+                    logger.warning(
+                        "Sportmonks 429 on attempt %d – retrying in %ds: %s",
+                        attempt, delay, url,
+                    )
+                    time.sleep(delay)
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as exc:
+                logger.error("Sportmonks HTTP error %s – %s", exc.response.status_code, url)
+                raise
+            except requests.exceptions.RequestException as exc:
+                logger.error("Sportmonks request failed: %s", exc)
+                raise
+        # Should be unreachable, but raise explicitly for safety
+        raise RuntimeError("Sportmonks _get: all retries exhausted without a response")  # type: ignore[misc]
 
     def _paginate(self, endpoint: str, params: Optional[Dict] = None) -> List[Dict]:
         """Fetch all pages for a paginated endpoint and return combined data."""
@@ -121,6 +145,8 @@ class SportmonksClient:
                         "include": "participants;scores;league",
                     },
                 )
+                # Filter in Python in case the API-side league filter is silently ignored
+                fixtures = [f for f in fixtures if _fixture_league_id(f) in (league_id, None)]
                 logger.info("  → %d fixtures found for league_id=%d", len(fixtures), league_id)
                 all_fixtures.extend(fixtures)
             except Exception as exc:
