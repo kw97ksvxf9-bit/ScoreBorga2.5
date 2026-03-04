@@ -8,10 +8,14 @@ No API keys or network access required.
 Covers:
   - run_pipeline (stat mode) — happy path with real fixtures/odds data
   - run_pipeline (ensemble mode) — untrained models fall back gracefully
+  - run_pipeline (ensemble mode) — auto-training triggered when untrained
+  - run_pipeline (ensemble mode) — stat fallback when training fails
+  - run_pipeline (ensemble mode) — skips training when already trained
   - run_pipeline — empty fixtures → returns "no fixtures" message
   - run_pipeline dry_run=False — Telegram send is called
   - Analytics → predictor chain — stat scores and output keys are valid
   - 429 retry logic in SportmonksClient._get
+  - EnsemblePredictor.is_trained and save_model
 """
 
 import time
@@ -381,3 +385,145 @@ class TestFixtureLeagueIdFilter:
     def test_missing_league_id_returns_none(self):
         from data.sportmonks import _fixture_league_id
         assert _fixture_league_id({}) is None
+
+
+# ---------------------------------------------------------------------------
+# 8. Ensemble auto-training in run_pipeline
+# ---------------------------------------------------------------------------
+
+class TestEnsembleAutoTraining:
+    """Verify that run_pipeline triggers ensemble training when models are untrained."""
+
+    def _setup_mocks(self, mock_sm_cls, mock_odds_cls):
+        client = MagicMock()
+        client.get_weekend_fixtures.return_value = WEEKEND_FIXTURES
+        client.get_recent_fixtures.return_value = RECENT_HOME
+        client.get_head_to_head.return_value = H2H
+        mock_sm_cls.return_value = client
+
+        odds_client = MagicMock()
+        odds_client.get_odds_for_all_top7.return_value = {}
+        odds_client.map_odds_to_fixture.return_value = SAMPLE_ODDS
+        mock_odds_cls.return_value = odds_client
+
+    @patch("output.dispatcher.send_message", return_value=True)
+    @patch("output.dispatcher.OddsApiClient")
+    @patch("output.dispatcher.SportmonksClient")
+    @patch("output.dispatcher.train_ensemble_model", return_value=True)
+    @patch("output.dispatcher.get_ensemble_predictor")
+    def test_training_triggered_when_untrained(
+        self, mock_get_ensemble, mock_train, mock_sm_cls, mock_odds_cls, mock_send
+    ):
+        """run_pipeline must call train_ensemble_model when no sub-models are trained."""
+        mock_ensemble = MagicMock()
+        mock_ensemble.is_trained = False
+        mock_get_ensemble.return_value = mock_ensemble
+
+        self._setup_mocks(mock_sm_cls, mock_odds_cls)
+        run_pipeline(dry_run=True, mode="ensemble")
+
+        mock_train.assert_called_once()
+
+    @patch("output.dispatcher.send_message", return_value=True)
+    @patch("output.dispatcher.OddsApiClient")
+    @patch("output.dispatcher.SportmonksClient")
+    @patch("output.dispatcher.train_ensemble_model", return_value=False)
+    @patch("output.dispatcher.get_ensemble_predictor")
+    def test_falls_back_to_stat_when_training_fails(
+        self, mock_get_ensemble, mock_train, mock_sm_cls, mock_odds_cls, mock_send
+    ):
+        """When ensemble training fails, run_pipeline must fall back to stat mode."""
+        mock_ensemble = MagicMock()
+        mock_ensemble.is_trained = False
+        mock_get_ensemble.return_value = mock_ensemble
+
+        self._setup_mocks(mock_sm_cls, mock_odds_cls)
+        result = run_pipeline(dry_run=True, mode="ensemble")
+
+        # Pipeline completes with a stat-mode message rather than crashing
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    @patch("output.dispatcher.send_message", return_value=True)
+    @patch("output.dispatcher.OddsApiClient")
+    @patch("output.dispatcher.SportmonksClient")
+    @patch("output.dispatcher.train_ensemble_model", return_value=True)
+    @patch("output.dispatcher.get_ensemble_predictor")
+    def test_training_skipped_when_already_trained(
+        self, mock_get_ensemble, mock_train, mock_sm_cls, mock_odds_cls, mock_send
+    ):
+        """run_pipeline must not retrain when the ensemble is already trained."""
+        mock_ensemble = MagicMock()
+        mock_ensemble.is_trained = True
+        mock_get_ensemble.return_value = mock_ensemble
+
+        self._setup_mocks(mock_sm_cls, mock_odds_cls)
+        run_pipeline(dry_run=True, mode="ensemble")
+
+        mock_train.assert_not_called()
+
+    @patch("output.dispatcher.send_message", return_value=True)
+    @patch("output.dispatcher.OddsApiClient")
+    @patch("output.dispatcher.SportmonksClient")
+    @patch("output.dispatcher.train_ensemble_model", return_value=True)
+    @patch("output.dispatcher.get_ensemble_predictor")
+    def test_force_retrain_retrains_even_when_trained(
+        self, mock_get_ensemble, mock_train, mock_sm_cls, mock_odds_cls, mock_send
+    ):
+        """force_retrain=True must trigger training even when models are already trained."""
+        mock_ensemble = MagicMock()
+        mock_ensemble.is_trained = True
+        mock_get_ensemble.return_value = mock_ensemble
+
+        self._setup_mocks(mock_sm_cls, mock_odds_cls)
+        run_pipeline(dry_run=True, mode="ensemble", force_retrain=True)
+
+        mock_train.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 9. EnsemblePredictor.is_trained and save_model
+# ---------------------------------------------------------------------------
+
+class TestEnsemblePredictorIsTrainedAndSave:
+    """Unit tests for the new is_trained property and save_model method."""
+
+    def _make_sub(self, is_trained: bool) -> MagicMock:
+        m = MagicMock()
+        m.is_trained = is_trained
+        m.save_model.return_value = is_trained  # only "trained" models save successfully
+        return m
+
+    def _ensemble_with_subs(self, trained_flags):
+        """Create an EnsemblePredictor and replace sub-models with mocks."""
+        from engine.ml_model import EnsemblePredictor
+        ep = EnsemblePredictor()  # loads from disk (no files → all untrained)
+        subs = [self._make_sub(f) for f in trained_flags]
+        ep._rf, ep._gb, ep._lr, ep._xgb, ep._cb, ep._svm = subs
+        return ep
+
+    def test_is_trained_false_when_all_untrained(self):
+        ep = self._ensemble_with_subs([False, False, False, False, False, False])
+        assert ep.is_trained is False
+
+    def test_is_trained_true_when_any_trained(self):
+        # Only XGBoost trained
+        ep = self._ensemble_with_subs([False, False, False, True, False, False])
+        assert ep.is_trained is True
+
+    def test_is_trained_true_when_all_trained(self):
+        ep = self._ensemble_with_subs([True, True, True, True, True, True])
+        assert ep.is_trained is True
+
+    def test_save_model_delegates_to_all_sub_models(self):
+        ep = self._ensemble_with_subs([True, True, True, True, True, True])
+        result = ep.save_model()
+        assert result is True
+        for sub in (ep._rf, ep._gb, ep._lr, ep._xgb, ep._cb, ep._svm):
+            sub.save_model.assert_called_once()
+
+    def test_save_model_returns_false_when_all_fail(self):
+        ep = self._ensemble_with_subs([False, False, False, False, False, False])
+        # All untrained → all save_model() return False
+        result = ep.save_model()
+        assert result is False

@@ -19,6 +19,7 @@ from typing import List, Optional
 from data.sportmonks import SportmonksClient
 from data.odds_api import OddsApiClient
 from engine.analytics import build_fixture_analytics
+from engine.ml_model import get_ensemble_predictor
 from engine.predictor import predict_all
 from engine.polisher import polish_all
 from output.telegram_bot import send_message
@@ -26,6 +27,52 @@ from leagues.top7 import TOP7_LEAGUES, LEAGUE_BY_ID
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def train_ensemble_model(
+    sportmonks_client: Optional[SportmonksClient] = None,
+    num_seasons: Optional[int] = None,
+    league_ids: Optional[List[int]] = None,
+) -> bool:
+    """
+    Train the ensemble model (all six sub-models) on historical data.
+
+    Args:
+        sportmonks_client: Optional Sportmonks client instance (creates new one if not provided)
+        num_seasons: Number of seasons to train on (defaults to settings.HISTORICAL_SEASONS)
+        league_ids: List of league IDs to fetch data for (defaults to settings.LEAGUE_IDS)
+
+    Returns:
+        True if training succeeded, False otherwise
+    """
+    from data.historical import HistoricalDataFetcher
+
+    client = sportmonks_client or SportmonksClient()
+    num_seasons = num_seasons or settings.HISTORICAL_SEASONS
+    league_ids = league_ids or settings.LEAGUE_IDS
+
+    logger.info("=== Training ensemble models on %d seasons of historical data ===", num_seasons)
+
+    fetcher = HistoricalDataFetcher(client)
+    training_data = fetcher.fetch_historical_training_data(
+        league_ids=league_ids,
+        num_seasons=num_seasons,
+    )
+
+    if not training_data:
+        logger.warning("No historical training data available")
+        return False
+
+    ensemble = get_ensemble_predictor()
+    success = ensemble.train(training_data)
+
+    if success:
+        ensemble.save_model()
+        logger.info("=== Ensemble model training complete ===")
+    else:
+        logger.error("=== Ensemble model training failed ===")
+
+    return success
 
 
 def train_ml_model(
@@ -129,6 +176,19 @@ def run_pipeline(
                 mode = "stat"
         else:
             logger.info("Using existing trained ML model")
+
+    elif mode == "ensemble":
+        ensemble = get_ensemble_predictor()
+
+        # Train if no sub-models are trained or if force_retrain is True
+        if force_retrain or not ensemble.is_trained:
+            logger.info("Ensemble models not trained, initiating training...")
+            training_success = train_ensemble_model(sm_client, league_ids=league_ids)
+            if not training_success:
+                logger.warning("Ensemble model training failed, falling back to stat mode")
+                mode = "stat"
+        else:
+            logger.info("Using existing trained ensemble models")
 
     # 3. Fetch odds for all top-7 leagues
     odds_client = OddsApiClient()

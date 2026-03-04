@@ -934,6 +934,28 @@ class EnsemblePredictor:
         self._svm.load_model()
 
     @property
+    def is_trained(self) -> bool:
+        """Return True if at least one sub-model is trained and can make predictions.
+        The soft-vote fallback works with any subset of trained sub-models, so a
+        partial ensemble is still useful. Use force_retrain=True to retrain all."""
+        return any(
+            m.is_trained
+            for m in (self._rf, self._gb, self._lr, self._xgb, self._cb, self._svm)
+        )
+
+    def save_model(self) -> bool:
+        """Save all trained sub-models to disk."""
+        results = [
+            self._rf.save_model(),
+            self._gb.save_model(),
+            self._lr.save_model(),
+            self._xgb.save_model(),
+            self._cb.save_model(),
+            self._svm.save_model(),
+        ]
+        return any(results)
+
+    @property
     def _weights(self) -> Dict[str, float]:
         return {
             "rf": settings.ENSEMBLE_RF_WEIGHT,
